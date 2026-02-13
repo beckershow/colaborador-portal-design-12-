@@ -67,8 +67,8 @@ export function EngageSidebar() {
   // TASK 2: Módulos do Colaborador - agrupados em categoria colapsável (sem Feed Social)
   const modulosColaborador = [
     { name: "Humor do Dia", href: "/humor", icon: Heart },
-    { name: "Feedbacks", href: "/feedbacks", icon: MessageSquare },
-    { name: "Pesquisas", href: "/pesquisas", icon: ClipboardList },
+    // { name: "Feedbacks", href: "/feedbacks", icon: MessageSquare },
+    // { name: "Pesquisas", href: "/pesquisas", icon: ClipboardList },
     { name: "Treinamentos", href: "/treinamentos", icon: GraduationCap },
     { name: "Eventos", href: "/eventos", icon: Calendar }, // TASK 1: Novo item
     { name: "Carreira e Seleção", href: "/carreira-selecao", icon: TrendingUp, comingSoon: true },

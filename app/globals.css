@@ -188,8 +188,8 @@ select {
 }
 
 /* Garantir que grids e flex containers respeitem limites */
-.grid,
-[class*="grid"] {
+.grid:not([data-slot="dialog-content"]),
+[class*="grid"]:not([data-slot="dialog-content"]) {
   max-width: 100%;
   min-width: 0;
 }

@@ -32,6 +32,7 @@ export type TrainingPayload = {
   percentualResumo?: number
   resumoGerado?: string
   resumoConfirmado?: boolean
+  resumoAudioKey?: string
   iaConfig?: unknown
   iaConversoes?: Array<"texto" | "audio" | "video">
   colaboradorVe?: Array<"texto" | "audio" | "video">
@@ -78,6 +79,7 @@ export type TrainingDetail = {
   contentOrigin?: "texto" | "documento" | "audio" | "video" | null
   contentText?: string | null
   contentFiles?: string[]
+  contentFileUrls?: Array<{ key: string; url: string }>
   noAssessment?: boolean
   convertContent?: boolean
   conversionType?: "texto" | "audio" | "video" | null
@@ -85,6 +87,10 @@ export type TrainingDetail = {
   summaryPercent?: number
   summaryText?: string | null
   summaryConfirmed?: boolean
+  summaryAudioKey?: string | null
+  summaryAudioUrl?: string | null
+  summaryAudioKey?: string | null
+  summaryAudioUrl?: string | null
   aiConfig?: unknown
   aiConversions?: Array<"texto" | "audio" | "video">
   visibleFormats?: Array<"texto" | "audio" | "video">

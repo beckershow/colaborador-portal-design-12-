@@ -29,3 +29,24 @@ export async function requestTrainingQuestions(payload: {
     body: JSON.stringify(payload),
   })
 }
+
+export async function requestTrainingSummary(payload: {
+  content?: string
+  fileUrls?: string[]
+  summaryPercent: number
+  objective?: string
+}) {
+  return apiFetch<{ data: { summary: string } }>("/ai/training-summary", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function requestTrainingSummaryAudio(payload: {
+  summaryText: string
+}) {
+  return apiFetch<{ data: { key: string; url: string } }>("/ai/training-summary-audio", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  })
+}

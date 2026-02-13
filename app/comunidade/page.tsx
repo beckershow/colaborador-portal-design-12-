@@ -3,7 +3,7 @@
 import { Input } from "@/components/ui/input"
 import type React from "react"
 import { useState, useEffect } from "react"
-import { useAuth } from "@/lib/auth-context"
+import { useAuth, mockUsers } from "@/lib/auth-context"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -36,6 +36,7 @@ const Mình_ranking = [
 interface Comentario {
   autor: string
   avatar: string
+  avatarUrl?: string
   conteudo: string
   tempo: string
 }
@@ -44,6 +45,7 @@ interface Postagem {
   id: string
   autor: string
   avatar: string
+  avatarUrl?: string
   cargo: string
   departamento: string
   tempo: string
@@ -68,6 +70,7 @@ interface Postagem {
 export default function ComunidadePage() {
   const { user, hasPermission } = useAuth()
   const { toast } = useToast()
+  const [userAvatarMap, setUserAvatarMap] = useState<Record<string, string>>({})
   const [postagens, setPostagens] = useState<Postagem[]>([
     {
       id: "post-1",
@@ -155,6 +158,39 @@ export default function ComunidadePage() {
   const [playingVideos, setPlayingVideos] = useState<Record<string, boolean>>({})
   const [conquistaSelecionada, setConquistaSelecionada] = useState<string | null>(null)
   const [showConquistasModal, setShowConquistasModal] = useState(false)
+
+  useEffect(() => {
+    const map: Record<string, string> = {}
+    mockUsers.forEach((u) => {
+      if (u.id) map[u.id] = u.avatar
+      if (u.nome) map[u.nome.toLowerCase()] = u.avatar
+    })
+    if (typeof window !== "undefined") {
+      try {
+        const storedUsers = JSON.parse(localStorage.getItem("engageai_users") || "[]")
+        storedUsers.forEach((u: any) => {
+          if (u?.id && u?.avatar) map[String(u.id)] = u.avatar
+          if (u?.nome && u?.avatar) map[String(u.nome).toLowerCase()] = u.avatar
+        })
+      } catch {
+        // ignore storage errors
+      }
+    }
+    setUserAvatarMap(map)
+  }, [])
+
+  const resolveAvatarUrl = (post: Postagem) => {
+    return (
+      post.avatarUrl ||
+      (post.userId ? userAvatarMap[String(post.userId)] : undefined) ||
+      userAvatarMap[post.autor?.toLowerCase()] ||
+      ""
+    )
+  }
+
+  const resolveCommentAvatarUrl = (comentario: Comentario) => {
+    return comentario.avatarUrl || userAvatarMap[comentario.autor?.toLowerCase()] || ""
+  }
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -272,6 +308,7 @@ export default function ComunidadePage() {
         id: `post-${Date.now()}`,
         autor: user.nome,
         avatar: user.avatar || user.nome.substring(0, 2).toUpperCase(),
+        avatarUrl: user.avatar,
         cargo: user.cargo,
         departamento: user.departamento,
         tempo: "Agora",
@@ -436,6 +473,7 @@ export default function ComunidadePage() {
                 {
                   autor: user.nome,
                   avatar: user.avatar || user.nome.substring(0, 2).toUpperCase(),
+                  avatarUrl: user.avatar,
                   conteudo: comentario,
                   tempo: "Agora",
                 },
@@ -486,6 +524,9 @@ export default function ComunidadePage() {
                   <div key={post.id} className="p-4 rounded-lg border border-border bg-muted/30">
                     <div className="flex items-start gap-4">
                       <Avatar className="h-10 w-10">
+                        {resolveAvatarUrl(post) ? (
+                          <AvatarImage src={resolveAvatarUrl(post)} />
+                        ) : null}
                         <AvatarFallback className="bg-primary text-primary-foreground">{post.avatar}</AvatarFallback>
                       </Avatar>
                       <div className="flex-1">
@@ -536,7 +577,7 @@ export default function ComunidadePage() {
             <CardContent className="pt-6">
               <div className="flex gap-4">
                 <Avatar className="h-12 w-12">
-                  <AvatarImage src="/professional-avatar-woman.jpg" />
+                  {user?.avatar ? <AvatarImage src={user.avatar} /> : null}
                   <AvatarFallback className="bg-primary text-primary-foreground">
                     {user?.nome.substring(0, 2).toUpperCase() || "AC"}
                   </AvatarFallback>
@@ -641,7 +682,9 @@ export default function ComunidadePage() {
                   {/* Header do Post */}
                   <div className="flex items-start gap-4">
                     <Avatar className="h-12 w-12">
-                      <AvatarImage src={`/diverse-group-avatars.png?height=48&width=48&query=avatar ${post.autor}`} />
+                      {resolveAvatarUrl(post) ? (
+                        <AvatarImage src={resolveAvatarUrl(post)} />
+                      ) : null}
                       <AvatarFallback className="bg-primary text-primary-foreground">{post.avatar}</AvatarFallback>
                     </Avatar>
                     <div className="flex-1">
@@ -727,6 +770,9 @@ export default function ComunidadePage() {
                           {post.comentariosList.map((comentario, idx) => (
                             <div key={idx} className="flex gap-3">
                               <Avatar className="h-8 w-8">
+                                {resolveCommentAvatarUrl(comentario) ? (
+                                  <AvatarImage src={resolveCommentAvatarUrl(comentario)} />
+                                ) : null}
                                 <AvatarFallback className="bg-muted text-xs">{comentario.avatar}</AvatarFallback>
                               </Avatar>
                               <div className="flex-1">
@@ -742,6 +788,7 @@ export default function ComunidadePage() {
                       {/* Novo Comentário - ÚNICA caixa de input */}
                       <div className="flex gap-3">
                         <Avatar className="h-8 w-8">
+                          {user?.avatar ? <AvatarImage src={user.avatar} /> : null}
                           <AvatarFallback className="bg-primary text-primary-foreground text-xs">
                             {user?.nome.substring(0, 2).toUpperCase() || "AC"}
                           </AvatarFallback>

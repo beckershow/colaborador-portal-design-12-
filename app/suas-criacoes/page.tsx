@@ -242,7 +242,9 @@ export default function SuasCriacoesPage() {
                     <SelectContent>
                       <SelectItem value="todos">Todos os tipos</SelectItem>
                       <SelectItem value="campanha">Campanhas</SelectItem>
+                      {/*
                       <SelectItem value="pesquisa">Pesquisas</SelectItem>
+                      */}
                       <SelectItem value="treinamento">Treinamentos</SelectItem>
                       <SelectItem value="meta">Metas</SelectItem>
                       <SelectItem value="missao-do-dia">Missões do Dia</SelectItem>
@@ -266,10 +268,12 @@ export default function SuasCriacoesPage() {
               <Target className="h-4 w-4" />
               Campanhas
             </TabsTrigger>
+            {/*
             <TabsTrigger value="pesquisa" className="flex items-center gap-2">
               <ClipboardList className="h-4 w-4" />
               Pesquisas
             </TabsTrigger>
+            */}
             <TabsTrigger value="treinamento" className="flex items-center gap-2">
               <GraduationCap className="h-4 w-4" />
               Treinamentos
@@ -289,7 +293,7 @@ export default function SuasCriacoesPage() {
           </TabsList>
 
           {/* Content for all tabs */}
-          {(["ultimas", "campanha", "pesquisa", "treinamento", "meta", "missao-do-dia", "evento"] as const).map((tabValue) => (
+          {(["ultimas", "campanha", /* "pesquisa", */ "treinamento", "meta", "missao-do-dia", "evento"] as const).map((tabValue) => (
             <TabsContent key={tabValue} value={tabValue} className="space-y-4">
               {isLoadingCreations ? (
                 <Card className="clay-card border-0">

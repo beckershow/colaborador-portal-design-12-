@@ -23,24 +23,14 @@ export function HumorPopupModal() {
   }, [])
 
   useEffect(() => {
-    if (user && !hasRegisteredMood) {
-      const hasInStorage = HumorService.hasRegisteredToday(user.id)
-
-      if (hasInStorage) {
-        // Se já tem no localStorage mas o contexto não sabe, sincronizar
-        setHasRegisteredMood(true)
-        return
-      }
-
-      // TASK 9: Garantir que seja o PRIMEIRO pop-up ao acessar a plataforma
-      // Abrir imediatamente após o carregamento (300ms para garantir renderização)
+    if (user) {
       const timer = setTimeout(() => {
         setIsOpen(true)
       }, 300)
 
       return () => clearTimeout(timer)
     }
-  }, [user, hasRegisteredMood, setHasRegisteredMood])
+  }, [user])
 
   const moods = [
     { value: 5, emoji: "😄", label: "Ótimo", color: "bg-primary/10 hover:bg-primary/20 border-primary" },
@@ -109,13 +99,13 @@ export function HumorPopupModal() {
     setIsOpen(false)
   }
 
-  if (!user || hasRegisteredMood || !config.ativo) return null
+  if (!user || !config.ativo) return null
 
   const isObrigatorio = config.obrigatorio && config.bloquearAcesso
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl" onPointerDownOutside={(e) => {
+      <DialogContent style={{ maxWidth: '760px', width: 'min(90vw, 760px)' }} onPointerDownOutside={(e) => {
         // TASK 9: Impedir fechar clicando fora se obrigatório
         if (isObrigatorio) {
           e.preventDefault()
@@ -138,11 +128,11 @@ export function HumorPopupModal() {
         )}
 
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-2xl">
-            <Heart className="h-6 w-6 text-chart-3" />
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <Heart className="h-5 w-5 text-chart-3" />
             Como você está se sentindo hoje?
           </DialogTitle>
-          <DialogDescription className="text-base">
+          <DialogDescription className="text-sm">
             {/* TASK 9: Mostrar os ganhos ANTES do registro */}
             {config.rewardsEnabled ? (
               <>
@@ -170,19 +160,19 @@ export function HumorPopupModal() {
           </div>
         )}
 
-        <div className="py-6">
-          <div className="grid grid-cols-5 gap-4">
+        <div className="py-2">
+          <div className="grid grid-cols-5 gap-2">
             {moods.map((mood) => (
               <button
                 key={mood.value}
                 type="button"
                 onClick={() => setSelectedMood(mood.value)}
-                className={`flex flex-col items-center gap-3 rounded-xl border-2 p-6 transition-all clay-button ${mood.color} ${
+                className={`flex flex-col items-center gap-1 rounded-xl border-2 p-2 transition-all clay-button ${mood.color} ${
                   selectedMood === mood.value ? "ring-4 ring-primary/30 scale-105" : ""
                 }`}
               >
-                <span className="text-6xl transition-transform hover:scale-110">{mood.emoji}</span>
-                <span className="text-sm font-semibold">{mood.label}</span>
+                <span className="text-2xl transition-transform hover:scale-110">{mood.emoji}</span>
+                <span className="text-xs font-semibold">{mood.label}</span>
               </button>
             ))}
           </div>
@@ -191,15 +181,15 @@ export function HumorPopupModal() {
         <div className="flex justify-end gap-3">
           {/* Botão "Pular" - apenas se não for obrigatório */}
           {!isObrigatorio && (
-            <Button onClick={handleClose} variant="outline" size="lg">
-              Pular por enquanto
+            <Button onClick={handleClose} variant="outline" size="sm">
+              Pular
             </Button>
           )}
           <Button
             onClick={handleSubmit}
             disabled={!selectedMood || isSubmitting}
-            className="clay-button min-w-32"
-            size="lg"
+            className="clay-button min-w-24"
+            size="sm"
           >
             {isSubmitting ? (
               <>

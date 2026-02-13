@@ -2425,7 +2425,9 @@ function SuasCriacoesPanel() {
                   <SelectContent>
                     <SelectItem value="todos">Todos os tipos</SelectItem>
                     <SelectItem value="campanha">Campanhas</SelectItem>
+                    {/*
                     <SelectItem value="pesquisa">Pesquisas</SelectItem>
+                    */}
                     <SelectItem value="treinamento">Treinamentos</SelectItem>
                     <SelectItem value="meta">Metas</SelectItem>
                     <SelectItem value="missao-do-dia">Missões do Dia</SelectItem>
@@ -2449,10 +2451,12 @@ function SuasCriacoesPanel() {
             <Target className="h-4 w-4" />
             Campanhas
           </TabsTrigger>
+          {/*
           <TabsTrigger value="pesquisa" className="flex items-center gap-2">
             <ClipboardList className="h-4 w-4" />
             Pesquisas
           </TabsTrigger>
+          */}
           <TabsTrigger value="treinamento" className="flex items-center gap-2">
             <GraduationCap className="h-4 w-4" />
             Treinamentos
@@ -2472,7 +2476,7 @@ function SuasCriacoesPanel() {
         </TabsList>
 
         {/* Content for all tabs */}
-        {(["ultimas", "campanha", "pesquisa", "treinamento", "meta", "missao-do-dia", "evento"] as const).map((tabValue) => (
+        {(["ultimas", "campanha", /* "pesquisa", */ "treinamento", "meta", "missao-do-dia", "evento"] as const).map((tabValue) => (
           <TabsContent key={tabValue} value={tabValue} className="space-y-4">
             {isLoadingCreations ? (
               <Card className="clay-card border-0">
@@ -2947,6 +2951,18 @@ function AdminPageContent() {
     }
   }, [])
 
+  useEffect(() => {
+    const tab = localStorage.getItem("open-admin-tab")
+    if (tab) {
+      localStorage.removeItem("open-admin-tab")
+      setActiveTab(tab)
+      const trigger = document.getElementById(`radix-_r_0_-trigger-${tab}`)
+      if (trigger) {
+        trigger.click()
+      }
+    }
+  }, [])
+
   // Mock data for recent creations
   const criacoesRecentes = [
     {
@@ -3024,10 +3040,12 @@ function AdminPageContent() {
               <Heart className="h-4 w-4" />
               Humor do Dia
             </TabsTrigger>
+            {/*
             <TabsTrigger value="feedbacks">
               <MessageSquare className="h-4 w-4" />
               Feedbacks
             </TabsTrigger>
+            */}
             <TabsTrigger value="feed-social">
               <Users className="h-4 w-4" />
               Feed Social
@@ -3060,6 +3078,7 @@ function AdminPageContent() {
                     color: "bg-accent/10 border-accent",
                     href: "/gestor/criar-missao-do-dia",
                   },
+                  /*
                   {
                     title: "Criar Pesquisa",
                     description: "Pulse surveys e questionários",
@@ -3067,6 +3086,7 @@ function AdminPageContent() {
                     color: "bg-chart-1/10 border-chart-1",
                     href: "/pesquisas/criar",
                   },
+                  */
                   {
                     title: "Criar Treinamento",
                     description: "Cursos e trilhas de aprendizado",
@@ -3087,13 +3107,25 @@ function AdminPageContent() {
                     icon: Target,
                     color: "bg-green-500/10 border-green-500",
                     href: "/admin/criar-meta",
+                    comingSoon: true,
                   },
                 ].map((item) => (
                   <Card
                     key={item.title}
-                    className={`clay-card border-2 ${item.color} cursor-pointer transition-all hover:scale-105 hover:shadow-lg`}
-                    onClick={() => router.push(item.href)}
+                    className={`clay-card border-2 relative ${item.color} transition-all ${
+                      item.comingSoon ? "opacity-70 cursor-not-allowed" : "cursor-pointer hover:scale-105 hover:shadow-lg"
+                    }`}
+                    onClick={() => {
+                      if (!item.comingSoon) {
+                        router.push(item.href)
+                      }
+                    }}
                   >
+                    {item.comingSoon && (
+                      <Badge className="absolute right-3 top-3 bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+                        Em breve
+                      </Badge>
+                    )}
                     <CardContent className="pt-6">
                       <div className="flex flex-col items-center text-center">
                         <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/80">
@@ -3101,7 +3133,7 @@ function AdminPageContent() {
                         </div>
                         <h4 className="font-bold text-foreground">{item.title}</h4>
                         <p className="mt-2 text-sm text-muted-foreground">{item.description}</p>
-                        <Button className="mt-4 w-full clay-button">
+                        <Button className="mt-4 w-full clay-button" disabled={item.comingSoon}>
                           <Plus className="mr-2 h-4 w-4" />
                           Criar
                         </Button>
@@ -3148,11 +3180,13 @@ function AdminPageContent() {
                       icon: Heart,
                     },
                     { title: "Desafio no Feed", description: "Estimule publicações e interação social", icon: Users },
+                    /*
                     {
                       title: "Campanha de Feedback",
                       description: "Incentive reconhecimento entre colaboradores",
                       icon: MessageSquare,
                     },
+                    */
                   ].map((type) => (
                     <div
                       key={type.title}
@@ -3186,9 +3220,11 @@ function AdminPageContent() {
             <HumorDoDiaPanel />
           </TabsContent>
 
+          {/*
           <TabsContent value="feedbacks" className="space-y-4">
             <FeedbackConfigPanel />
           </TabsContent>
+          */}
 
           <TabsContent value="feed-social" className="space-y-4">
             <FeedSocialConfigPanel />

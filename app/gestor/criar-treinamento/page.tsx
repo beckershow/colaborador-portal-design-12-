@@ -42,6 +42,7 @@ import {
   Info,
   ListOrdered,
   Edit,
+  Volume2,
 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -50,22 +51,23 @@ import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { EngajamentoService } from "@/lib/engajamento-service"
-import { requestTrainingAssist, requestTrainingQuestions } from "@/lib/ai-api"
+import { requestTrainingAssist, requestTrainingQuestions, requestTrainingSummary, requestTrainingSummaryAudio } from "@/lib/ai-api"
 import { uploadFileToBackend } from "@/lib/uploads-api"
 import { createTraining, getTraining, updateTraining } from "@/lib/trainings-api"
 
 // Tipos
-type StepId =
-  | "informacoes"
-  | "campanha"
-  | "conteudo"
-  | "ia-parametros"
-  | "curadoria"
-  | "publico" // TASK 1: Nova etapa após curadoria
-  | "avaliacao"
-  | "prazos"
-  | "ganhos"
-  | "preview"
+  type StepId =
+    | "informacoes"
+    | "campanha"
+    | "conteudo"
+    | "ia-parametros"
+    | "curadoria"
+    | "publico" // TASK 1: Nova etapa após curadoria
+    | "avaliacao"
+    | "certificado"
+    | "prazos"
+    | "ganhos"
+    | "preview"
 
 type ConteudoOrigem = "texto" | "documento" | "audio" | "video"
 type ConteudoFormato = "texto" | "audio" | "video"
@@ -110,6 +112,8 @@ interface TrainingData {
   percentualResumo: number
   resumoGerado?: string
   resumoConfirmado: boolean
+  resumoAudioKey?: string
+  resumoAudioUrl?: string
   
   // IA
   iaConfig?: {
@@ -131,8 +135,12 @@ interface TrainingData {
   publicoTipo: "todo-time" | "colaboradores-especificos"
   colaboradoresSelecionados: string[] // IDs dos colaboradores selecionados
 
-  // Avaliação
-  questoesObrigatorias: boolean
+    // Avaliação
+    questoesObrigatorias: boolean
+    permitirRepeticao: boolean
+    emitirCertificado: boolean
+    modeloCertificado: "padrao" | "custom"
+    textoCertificado?: string
 
   // Prazos
   dataInicio: string
@@ -145,18 +153,19 @@ interface TrainingData {
 }
 
 // TASK 3 - Nova ordem das etapas
-const STEPS: { id: StepId; label: string; icon: any }[] = [
-  { id: "informacoes", label: "Informações Básicas", icon: FileText },
-  { id: "campanha", label: "Campanha", icon: Target },
-  { id: "conteudo", label: "Conteúdo", icon: BookOpen },
-  { id: "ia-parametros", label: "Parametrização IA", icon: Sparkles },
-  { id: "curadoria", label: "Curadoria de Questões", icon: CheckCircle2 },
-  { id: "publico", label: "Público", icon: Users }, // TASK 1: Nova etapa após curadoria
-  { id: "avaliacao", label: "Configuração Avaliação", icon: Settings },
-  { id: "prazos", label: "Prazos e Disponibilidade", icon: Calendar },
-  { id: "ganhos", label: "Ganhos", icon: Zap },
-  { id: "preview", label: "Preview", icon: Eye },
-]
+  const STEPS: { id: StepId; label: string; icon: any }[] = [
+    { id: "informacoes", label: "Informações Básicas", icon: FileText },
+    { id: "campanha", label: "Campanha", icon: Target },
+    { id: "conteudo", label: "Conteúdo", icon: BookOpen },
+    { id: "ia-parametros", label: "Parametrização IA", icon: Sparkles },
+    { id: "curadoria", label: "Curadoria de Questões", icon: CheckCircle2 },
+    { id: "publico", label: "Público", icon: Users }, // TASK 1: Nova etapa após curadoria
+    { id: "avaliacao", label: "Configuração Avaliação", icon: Settings },
+    { id: "prazos", label: "Prazos e Disponibilidade", icon: Calendar },
+    { id: "ganhos", label: "Ganhos", icon: Zap },
+    { id: "certificado", label: "Certificado", icon: Award },
+    { id: "preview", label: "Preview", icon: Eye },
+  ]
 
 export default function CriarTreinamentoPage() {
   const { user, hasPermission } = useAuth()
@@ -174,6 +183,8 @@ export default function CriarTreinamentoPage() {
   const [isPublishing, setIsPublishing] = useState(false)
   const [isLoadingEdit, setIsLoadingEdit] = useState(false)
   const [isGeneratingQuestions, setIsGeneratingQuestions] = useState(false)
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false)
+  const [isGeneratingSummaryAudio, setIsGeneratingSummaryAudio] = useState(false)
   const [isUploadingContent, setIsUploadingContent] = useState(false)
   const [campanhas, setCampanhas] = useState<any[]>([])
   const [campanhaSelecionada, setCampanhaSelecionada] = useState<any>(null)
@@ -198,6 +209,8 @@ export default function CriarTreinamentoPage() {
     disponibilizarOriginal: false,
     percentualResumo: 0,
     resumoConfirmado: false,
+    resumoAudioKey: undefined,
+    resumoAudioUrl: undefined,
     
     iaConversoes: [],
     colaboradorVe: [],
@@ -209,7 +222,11 @@ export default function CriarTreinamentoPage() {
   publicoTipo: "todo-time",
   colaboradoresSelecionados: [],
 
-  questoesObrigatorias: true,
+    questoesObrigatorias: true,
+    permitirRepeticao: false,
+    emitirCertificado: true,
+    modeloCertificado: "padrao",
+    textoCertificado: "",
 
   dataInicio: new Date().toISOString().split("T")[0],
   dataFim: "",
@@ -218,6 +235,18 @@ export default function CriarTreinamentoPage() {
   xp: 100,
   estrelas: 30,
   })
+
+  const certificatePreviewText = (() => {
+    const nome = user?.nome || "Colaborador"
+    const titulo = formData.titulo || "Treinamento"
+    const custom = formData.textoCertificado?.trim()
+    const base = custom && formData.modeloCertificado === "custom"
+      ? custom
+      : `Certificamos que ${nome} concluiu com êxito o treinamento "${titulo}", demonstrando comprometimento com seu desenvolvimento profissional.`
+    return base
+      .replaceAll("[NOME]", nome)
+      .replaceAll("[TÍTULO]", titulo)
+  })()
 
   const mapBackendToForm = (data: any): TrainingData => {
     const mapQuestionType = (value: string) =>
@@ -251,6 +280,8 @@ export default function CriarTreinamentoPage() {
       percentualResumo: data.summaryPercent || 0,
       resumoGerado: data.summaryText || undefined,
       resumoConfirmado: !!data.summaryConfirmed,
+      resumoAudioKey: data.summaryAudioKey || undefined,
+      resumoAudioUrl: data.summaryAudioUrl || undefined,
       iaConfig: data.aiConfig || undefined,
       iaConversoes: data.aiConversions || [],
       colaboradorVe: data.visibleFormats || [],
@@ -299,7 +330,10 @@ export default function CriarTreinamentoPage() {
           description: error?.message || "Não foi possível carregar o treinamento.",
           variant: "destructive",
         })
-        router.push("/admin?tab=criacoes")
+        if (typeof window !== "undefined") {
+          localStorage.setItem("open-admin-tab", "suas-criacoes")
+        }
+        router.push("/admin")
       } finally {
         setIsLoadingEdit(false)
       }
@@ -518,15 +552,17 @@ export default function CriarTreinamentoPage() {
         return
       }
 
-      setFormData({
-        ...formData,
-        questoes: questions,
-      })
+        setFormData({
+          ...formData,
+          questoes: questions,
+        })
 
-      toast({
-        title: "Questões geradas!",
-        description: "A IA gerou as questões com base no conteúdo informado.",
-      })
+        toast({
+          title: "Questões geradas!",
+          description: "A IA gerou as questões com base no conteúdo informado.",
+        })
+
+        setCurrentStep("curadoria")
     } catch (error: any) {
       toast({
         title: "Erro ao gerar questões",
@@ -535,6 +571,105 @@ export default function CriarTreinamentoPage() {
       })
     } finally {
       setIsGeneratingQuestions(false)
+    }
+  }
+
+  const gerarResumoIA = async () => {
+    const hasText = !!formData.conteudoTexto && formData.conteudoTexto.trim().length >= 20
+    const hasFiles = (formData.conteudoArquivos || []).length > 0
+
+    if (!hasText && !hasFiles) {
+      toast({
+        title: "Conteúdo insuficiente",
+        description: "Adicione conteúdo textual ou anexe arquivos para gerar o resumo.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (formData.percentualResumo <= 0) {
+      toast({
+        title: "Percentual inválido",
+        description: "Defina um percentual de resumo maior que 0%.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      setIsGeneratingSummary(true)
+      const contentForAi = hasText ? formData.conteudoTexto : ""
+      const fileKeys = formData.conteudoArquivos || []
+      const objectiveText =
+        (formData.titulo && formData.titulo.trim().length >= 10)
+          ? formData.titulo
+          : (iaPrompt && iaPrompt.trim().length >= 10)
+            ? iaPrompt
+            : undefined
+
+      const res = await requestTrainingSummary({
+        content: contentForAi,
+        fileUrls: fileKeys.length > 0 ? fileKeys : undefined,
+        summaryPercent: formData.percentualResumo,
+        objective: objectiveText,
+      })
+
+      setFormData({
+        ...formData,
+        resumoGerado: res.data.summary,
+        resumoConfirmado: false,
+        resumoAudioKey: undefined,
+        resumoAudioUrl: undefined,
+      })
+
+      toast({
+        title: "Resumo Gerado",
+        description: "A IA gerou uma prévia do resumo. Revise e confirme.",
+      })
+    } catch (error: any) {
+      toast({
+        title: "Erro ao gerar resumo",
+        description: error?.message || "Não foi possível gerar o resumo.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsGeneratingSummary(false)
+    }
+  }
+
+  const gerarResumoAudio = async () => {
+    if (!formData.resumoGerado || formData.resumoGerado.trim().length < 10) {
+      toast({
+        title: "Resumo insuficiente",
+        description: "Gere e revise o resumo antes de criar o áudio.",
+        variant: "destructive",
+      })
+      return false
+    }
+    if (formData.resumoAudioKey && formData.resumoAudioUrl) {
+      return true
+    }
+
+    try {
+      setIsGeneratingSummaryAudio(true)
+      const res = await requestTrainingSummaryAudio({
+        summaryText: formData.resumoGerado,
+      })
+        setFormData((prev) => ({
+          ...prev,
+          resumoAudioKey: res.data.key,
+          resumoAudioUrl: res.data.url,
+        }))
+      return true
+    } catch (error: any) {
+      toast({
+        title: "Erro ao gerar áudio",
+        description: error?.message || "Não foi possível gerar o áudio do resumo.",
+        variant: "destructive",
+      })
+      return false
+    } finally {
+      setIsGeneratingSummaryAudio(false)
     }
   }
 
@@ -560,7 +695,7 @@ export default function CriarTreinamentoPage() {
         description: `${formData.titulo} foi ${isEditMode ? "atualizado" : "publicado"} com sucesso.`,
       })
       setShowPublishModal(false)
-      router.push("/admin")
+        router.push("/admin?tab=suas-criacoes")
     } catch (error: any) {
       toast({
         title: "Erro ao publicar",
@@ -1272,6 +1407,8 @@ export default function CriarTreinamentoPage() {
                                 percentualResumo: checked ? formData.percentualResumo : 0,
                                 resumoGerado: undefined,
                                 resumoConfirmado: false,
+                                resumoAudioKey: undefined,
+                                resumoAudioUrl: undefined,
                               })
                             }}
                           />
@@ -1295,7 +1432,12 @@ export default function CriarTreinamentoPage() {
                                 <Button
                                   type="button"
                                   variant={formData.tipoConversao === "audio" ? "default" : "outline"}
-                                  onClick={() => setFormData({ ...formData, tipoConversao: "audio" })}
+                                  onClick={() =>
+                                    setFormData({
+                                      ...formData,
+                                      tipoConversao: "audio",
+                                    })
+                                  }
                                   className="h-auto py-4 flex-col gap-2"
                                 >
                                   <Mic className="h-6 w-6" />
@@ -1304,7 +1446,14 @@ export default function CriarTreinamentoPage() {
                                 <Button
                                   type="button"
                                   variant={formData.tipoConversao === "video" ? "default" : "outline"}
-                                  onClick={() => setFormData({ ...formData, tipoConversao: "video" })}
+                                  onClick={() =>
+                                    setFormData({
+                                      ...formData,
+                                      tipoConversao: "video",
+                                      resumoAudioKey: undefined,
+                                      resumoAudioUrl: undefined,
+                                    })
+                                  }
                                   className="h-auto py-4 flex-col gap-2"
                                 >
                                   <Video className="h-6 w-6" />
@@ -1357,6 +1506,8 @@ export default function CriarTreinamentoPage() {
                                         percentualResumo: Number(e.target.value),
                                         resumoGerado: undefined,
                                         resumoConfirmado: false,
+                                        resumoAudioKey: undefined,
+                                        resumoAudioUrl: undefined,
                                       })
                                     }}
                                     className="flex-1"
@@ -1374,6 +1525,8 @@ export default function CriarTreinamentoPage() {
                                           percentualResumo: value,
                                           resumoGerado: undefined,
                                           resumoConfirmado: false,
+                                          resumoAudioKey: undefined,
+                                          resumoAudioUrl: undefined,
                                         })
                                       }}
                                       className="w-16 text-center"
@@ -1398,23 +1551,12 @@ export default function CriarTreinamentoPage() {
                                     <Button
                                       type="button"
                                       variant="secondary"
-                                      onClick={() => {
-                                        // Simular geração de resumo pela IA
-                                        const conteudo = formData.conteudoTexto || "Conteúdo do documento anexado"
-                                        const resumo = `[PRÉVIA DO RESUMO ${formData.percentualResumo}%]\n\n${conteudo.substring(0, Math.floor(conteudo.length * (1 - formData.percentualResumo / 100)))}\n\n... (conteúdo resumido pela IA)`
-                                        setFormData({
-                                          ...formData,
-                                          resumoGerado: resumo,
-                                        })
-                                        toast({
-                                          title: "Resumo Gerado",
-                                          description: "A IA gerou uma prévia do resumo. Revise e confirme.",
-                                        })
-                                      }}
+                                      onClick={gerarResumoIA}
                                       className="w-full"
+                                      disabled={isGeneratingSummary}
                                     >
                                       <Sparkles className="h-4 w-4 mr-2" />
-                                      Gerar Prévia do Resumo
+                                      {isGeneratingSummary ? "Gerando..." : "Gerar Prévia do Resumo"}
                                     </Button>
                                   )}
 
@@ -1431,11 +1573,23 @@ export default function CriarTreinamentoPage() {
                                           <Textarea
                                             value={formData.resumoGerado}
                                             onChange={(e) =>
-                                              setFormData({ ...formData, resumoGerado: e.target.value })
+                                              setFormData({
+                                                ...formData,
+                                                resumoGerado: e.target.value,
+                                                resumoConfirmado: false,
+                                                resumoAudioKey: undefined,
+                                                resumoAudioUrl: undefined,
+                                              })
                                             }
                                             rows={8}
                                             className="font-mono text-xs"
                                           />
+                                          {formData.resumoAudioUrl && (
+                                            <div className="mt-4 flex items-center gap-3 rounded-md border bg-background p-3">
+                                              <Volume2 className="h-4 w-4 text-muted-foreground" />
+                                              <audio controls src={formData.resumoAudioUrl} className="w-full" />
+                                            </div>
+                                          )}
                                         </CardContent>
                                       </Card>
 
@@ -1444,32 +1598,39 @@ export default function CriarTreinamentoPage() {
                                           type="button"
                                           variant="outline"
                                           onClick={() => {
-                                            setFormData({
-                                              ...formData,
-                                              resumoGerado: undefined,
-                                            })
-                                          }}
-                                          className="flex-1"
-                                        >
+                                        setFormData({
+                                          ...formData,
+                                          resumoGerado: undefined,
+                                          resumoAudioKey: undefined,
+                                          resumoAudioUrl: undefined,
+                                        })
+                                      }}
+                                      className="flex-1"
+                                    >
                                           <X className="h-4 w-4 mr-2" />
                                           Ajustar Percentual
                                         </Button>
                                         <Button
                                           type="button"
-                                          onClick={() => {
-                                            setFormData({
-                                              ...formData,
-                                              resumoConfirmado: true,
-                                            })
+                                          onClick={async () => {
+                                            if (formData.tipoConversao === "audio") {
+                                              const ok = await gerarResumoAudio()
+                                              if (!ok) return
+                                            }
+                                              setFormData((prev) => ({
+                                                ...prev,
+                                                resumoConfirmado: true,
+                                              }))
                                             toast({
                                               title: "Resumo Confirmado",
                                               description: `O ${formData.tipoConversao === "audio" ? "áudio" : "vídeo"} será gerado com base neste resumo.`,
                                             })
                                           }}
                                           className="flex-1"
+                                          disabled={isGeneratingSummaryAudio}
                                         >
                                           <Check className="h-4 w-4 mr-2" />
-                                          Confirmar e Continuar
+                                          {isGeneratingSummaryAudio ? "Gerando áudio..." : "Confirmar e Continuar"}
                                         </Button>
                                       </div>
                                     </div>
@@ -1487,6 +1648,12 @@ export default function CriarTreinamentoPage() {
                                             </p>
                                           </div>
                                         </div>
+                                        {formData.resumoAudioUrl && (
+                                          <div className="mt-3 flex items-center gap-3 rounded-md border bg-background/70 p-3">
+                                            <Volume2 className="h-4 w-4 text-muted-foreground" />
+                                            <audio controls src={formData.resumoAudioUrl} className="w-full" />
+                                          </div>
+                                        )}
                                       </CardContent>
                                     </Card>
                                   )}
@@ -1740,34 +1907,42 @@ export default function CriarTreinamentoPage() {
                           <FileText className="h-4 w-4 mr-2" />
                           Descritiva
                         </Button>
-                        <Button
-                          type="button"
-                          variant={formData.iaConfig?.tipoResposta === "audio" ? "default" : "outline"}
-                          onClick={() =>
-                            setFormData({
-                              ...formData,
-                              iaConfig: { ...formData.iaConfig!, tipoResposta: "audio" },
-                            })
-                          }
-                          className="justify-start h-auto py-3"
-                        >
-                          <Mic className="h-4 w-4 mr-2" />
-                          Áudio
-                        </Button>
-                        <Button
-                          type="button"
-                          variant={formData.iaConfig?.tipoResposta === "video" ? "default" : "outline"}
-                          onClick={() =>
-                            setFormData({
-                              ...formData,
-                              iaConfig: { ...formData.iaConfig!, tipoResposta: "video" },
-                            })
-                          }
-                          className="justify-start h-auto py-3"
-                        >
-                          <Video className="h-4 w-4 mr-2" />
-                          Vídeo
-                        </Button>
+                          <Button
+                            type="button"
+                            variant={formData.iaConfig?.tipoResposta === "audio" ? "default" : "outline"}
+                            disabled
+                            onClick={() =>
+                              setFormData({
+                                ...formData,
+                                iaConfig: { ...formData.iaConfig!, tipoResposta: "audio" },
+                              })
+                            }
+                            className="justify-start h-auto py-3 relative opacity-60"
+                          >
+                            <Mic className="h-4 w-4 mr-2" />
+                            Áudio
+                            <span className="ml-auto text-[10px] uppercase tracking-wide text-yellow-700 dark:text-yellow-300">
+                              Em breve
+                            </span>
+                          </Button>
+                          <Button
+                            type="button"
+                            variant={formData.iaConfig?.tipoResposta === "video" ? "default" : "outline"}
+                            disabled
+                            onClick={() =>
+                              setFormData({
+                                ...formData,
+                                iaConfig: { ...formData.iaConfig!, tipoResposta: "video" },
+                              })
+                            }
+                            className="justify-start h-auto py-3 relative opacity-60"
+                          >
+                            <Video className="h-4 w-4 mr-2" />
+                            Vídeo
+                            <span className="ml-auto text-[10px] uppercase tracking-wide text-yellow-700 dark:text-yellow-300">
+                              Em breve
+                            </span>
+                          </Button>
                       </div>
                       
                       <Card className="bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800">
@@ -1840,7 +2015,11 @@ export default function CriarTreinamentoPage() {
 
                     {/* Botão de gerar */}
                     <Button className="w-full gap-2 h-12" size="lg" onClick={gerarQuestoesIA} disabled={isGeneratingQuestions}>
-                      <Sparkles className="h-5 w-5" />
+                      {isGeneratingQuestions ? (
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-solid border-white border-r-transparent" />
+                      ) : (
+                        <Sparkles className="h-5 w-5" />
+                      )}
                       {isGeneratingQuestions ? "Gerando..." : "Gerar Questões com IA"}
                     </Button>
 
@@ -2019,51 +2198,69 @@ export default function CriarTreinamentoPage() {
                             </Card>
                           )}
                           
-                          <div className="space-y-2">
-                            {[
-                              { value: "multipla-escolha", label: "Múltipla escolha", icon: Check },
-                              { value: "checkbox", label: "Caixa de seleção", icon: CheckSquare },
-                              { value: "descritiva", label: "Resposta descritiva", icon: FileText },
-                              { value: "video", label: "Resposta por vídeo", icon: Video },
-                              { value: "audio", label: "Resposta por áudio", icon: Mic },
-                            ].map((tipo) => (
-                              <div key={tipo.value} className="flex items-center gap-3 p-3 border rounded hover:bg-accent/5">
-                                <input
-                                  type="checkbox"
-                                  checked={novaQuestao?.tiposResposta?.includes(tipo.value) || false}
-                                  onChange={(e) => {
-                                    const currentTypes = novaQuestao?.tiposResposta || []
-                                    const newTypes = e.target.checked
-                                      ? [...currentTypes, tipo.value]
-                                      : currentTypes.filter((t) => t !== tipo.value)
-                                    
-                                    // TASK 3 - Gerenciar alternativas baseado nos tipos selecionados
-                                    const precisaAlternativas = newTypes.includes("multipla-escolha") || newTypes.includes("checkbox")
-                                    const novaQuestaoAtualizada = { 
-                                      ...novaQuestao!, 
-                                      tiposResposta: newTypes,
-                                      tipo: newTypes[0] || "multipla-escolha"
-                                    }
-                                    
-                                    if (!precisaAlternativas) {
-                                      // Limpar alternativas se nenhum tipo que precisa delas está selecionado
-                                      novaQuestaoAtualizada.alternativas = []
-                                      novaQuestaoAtualizada.alternativaCorreta = undefined
-                                    } else if (!novaQuestao?.alternativas || novaQuestao.alternativas.length === 0) {
-                                      // Inicializar alternativas se necessário e não existirem
-                                      novaQuestaoAtualizada.alternativas = ["", ""]
-                                      novaQuestaoAtualizada.alternativaCorreta = 0
-                                    }
-                                    
-                                    setNovaQuestao(novaQuestaoAtualizada)
-                                  }}
-                                  className="w-4 h-4"
-                                />
-                                <tipo.icon className="h-4 w-4 text-muted-foreground" />
-                                <Label className="cursor-pointer flex-1 m-0">{tipo.label}</Label>
-                              </div>
-                            ))}
-                          </div>
+                            <div className="space-y-2">
+                              {[
+                                { value: "multipla-escolha", label: "Múltipla escolha", icon: Check },
+                                { value: "checkbox", label: "Caixa de seleção", icon: CheckSquare },
+                                { value: "descritiva", label: "Resposta descritiva", icon: FileText },
+                                { value: "video", label: "Resposta por vídeo", icon: Video, comingSoon: true },
+                                { value: "audio", label: "Resposta por áudio", icon: Mic, comingSoon: true },
+                              ].map((tipo) => {
+                                const isComingSoon = !!tipo.comingSoon
+                                return (
+                                  <div
+                                    key={tipo.value}
+                                    className={`relative flex items-center gap-3 p-3 border rounded hover:bg-accent/5 ${isComingSoon ? "opacity-60 pointer-events-none" : ""}`}
+                                  >
+                                    {isComingSoon && (
+                                      <div className="absolute top-2 right-2">
+                                        <Badge
+                                          variant="secondary"
+                                          className="bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200"
+                                        >
+                                          Em breve
+                                        </Badge>
+                                      </div>
+                                    )}
+                                    <input
+                                      type="checkbox"
+                                      checked={novaQuestao?.tiposResposta?.includes(tipo.value) || false}
+                                      onChange={(e) => {
+                                        if (isComingSoon) return
+                                        const currentTypes = novaQuestao?.tiposResposta || []
+                                        const newTypes = e.target.checked
+                                          ? [...currentTypes, tipo.value]
+                                          : currentTypes.filter((t) => t !== tipo.value)
+                                        
+                                        // TASK 3 - Gerenciar alternativas baseado nos tipos selecionados
+                                        const precisaAlternativas = newTypes.includes("multipla-escolha") || newTypes.includes("checkbox")
+                                        const novaQuestaoAtualizada = { 
+                                          ...novaQuestao!, 
+                                          tiposResposta: newTypes,
+                                          tipo: newTypes[0] || "multipla-escolha"
+                                        }
+                                        
+                                        if (!precisaAlternativas) {
+                                          // Limpar alternativas se nenhum tipo que precisa delas está selecionado
+                                          novaQuestaoAtualizada.alternativas = []
+                                          novaQuestaoAtualizada.alternativaCorreta = undefined
+                                        } else if (!novaQuestao?.alternativas || novaQuestao.alternativas.length === 0) {
+                                          // Inicializar alternativas se necessário e não existirem
+                                          novaQuestaoAtualizada.alternativas = ["", ""]
+                                          novaQuestaoAtualizada.alternativaCorreta = 0
+                                        }
+                                        
+                                        setNovaQuestao(novaQuestaoAtualizada)
+                                      }}
+                                      className="w-4 h-4"
+                                      disabled={isComingSoon}
+                                    />
+                                    <tipo.icon className="h-4 w-4 text-muted-foreground" />
+                                    <Label className="cursor-pointer flex-1 m-0">{tipo.label}</Label>
+                                  </div>
+                                )
+                              })}
+                            </div>
                         </div>
 
                         {/* 3. IF múltipla escolha OU checkbox - mostrar alternativas */}
@@ -2366,35 +2563,167 @@ export default function CriarTreinamentoPage() {
             )}
 
             {/* TASK 7 - ETAPA 7: CONFIGURAÇÃO DA AVALIAÇÃO (sem toggle de ativar/desativar) */}
-            {currentStep === "avaliacao" && !formData.semAvaliacao && (
-              <Card className="clay-card border-0">
-                <CardHeader>
-                  <CardTitle>Configuração da Avaliação</CardTitle>
-                  <CardDescription>Defina as regras de conclusão</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
+              {currentStep === "avaliacao" && !formData.semAvaliacao && (
+                <Card className="clay-card border-0">
+                  <CardHeader>
+                    <CardTitle>Configuração da Avaliação</CardTitle>
+                    <CardDescription>Defina as regras de conclusão</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
                   {/* TASK 6 - Apenas o toggle de obrigatoriedade */}
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
-                    <div className="flex-1">
-                      <Label className="text-base">Responder todas as questões para concluir</Label>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        O colaborador precisa responder todas as questões antes de marcar como concluído
-                      </p>
+                    <div className="flex items-center justify-between p-4 border rounded-lg">
+                      <div className="flex-1">
+                        <Label className="text-base">Responder todas as questões para concluir</Label>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          O colaborador precisa responder todas as questões antes de marcar como concluído
+                        </p>
+                      </div>
+                      <Switch
+                        checked={formData.questoesObrigatorias}
+                        onCheckedChange={(checked) =>
+                          setFormData({ ...formData, questoesObrigatorias: checked })
+                        }
+                      />
                     </div>
-                    <Switch
-                      checked={formData.questoesObrigatorias}
-                      onCheckedChange={(checked) =>
-                        setFormData({ ...formData, questoesObrigatorias: checked })
-                      }
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+                    <div className="flex items-center justify-between p-4 border rounded-lg">
+                      <div className="flex-1">
+                        <Label className="text-base">Permitir repetição do treinamento pelo usuário</Label>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Define se o colaborador poderá refazer o treinamento após concluí-lo
+                        </p>
+                      </div>
+                      <Switch
+                        checked={formData.permitirRepeticao}
+                        onCheckedChange={(checked) =>
+                          setFormData({ ...formData, permitirRepeticao: checked })
+                        }
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
-            {/* TASK 8 - ETAPA 7: PRAZOS E DISPONIBILIDADE */}
-            {currentStep === "prazos" && (
-              <Card className="clay-card border-0">
+              {currentStep === "certificado" && (
+                <Card className="clay-card border-0">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Award className="h-6 w-6 text-accent" />
+                      Emissão de Certificado
+                    </CardTitle>
+                    <CardDescription>Configure se deseja emitir certificado de conclusão para este treinamento</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="flex items-center justify-between p-4 rounded-lg border-2 border-dashed">
+                      <div className="flex-1">
+                        <Label className="text-base font-semibold">Emitir certificado ao concluir</Label>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Ao ativar, o colaborador receberá um certificado digital após concluir o treinamento com sucesso
+                        </p>
+                      </div>
+                      <Switch
+                        checked={formData.emitirCertificado}
+                        onCheckedChange={(checked) =>
+                          setFormData({ ...formData, emitirCertificado: checked })
+                        }
+                      />
+                    </div>
+
+                    {formData.emitirCertificado && (
+                      <div className="space-y-6 pl-4 border-l-2 border-accent/30">
+                        <div className="space-y-3">
+                          <Label className="text-sm font-semibold">Modelo do Certificado</Label>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <Card
+                              className={`cursor-pointer transition-all hover:shadow-md border-2 ${formData.modeloCertificado === "padrao" ? "border-accent bg-accent/5" : "border-transparent"}`}
+                              onClick={() => setFormData({ ...formData, modeloCertificado: "padrao" })}
+                            >
+                              <CardContent className="px-6 pt-6 text-center">
+                                <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-accent/10 mx-auto">
+                                  <Award className="h-8 w-8 text-accent" />
+                                </div>
+                                <h4 className="font-semibold mb-1">Modelo Padrão</h4>
+                                <p className="text-xs text-muted-foreground">
+                                  Certificado padrão do Engage AI com logo e assinatura da empresa
+                                </p>
+                              </CardContent>
+                            </Card>
+                            <Card
+                              className={`cursor-pointer transition-all hover:shadow-md border-2 ${formData.modeloCertificado === "custom" ? "border-primary bg-primary/5" : "border-transparent"}`}
+                              onClick={() => setFormData({ ...formData, modeloCertificado: "custom" })}
+                            >
+                              <CardContent className="px-6 pt-6 text-center">
+                                <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 mx-auto">
+                                  <Sparkles className="h-8 w-8 text-primary" />
+                                </div>
+                                <h4 className="font-semibold mb-1">Modelo Customizado</h4>
+                                <p className="text-xs text-muted-foreground">
+                                  Personalize o texto e mensagem do certificado
+                                </p>
+                              </CardContent>
+                            </Card>
+                          </div>
+                        </div>
+
+                        {formData.modeloCertificado === "custom" && (
+                          <div className="space-y-2">
+                            <Label className="text-sm font-semibold">Texto do certificado (opcional)</Label>
+                            <Textarea
+                              rows={6}
+                              placeholder="Ex: Certificamos que [NOME] concluiu com êxito o treinamento [TÍTULO], demonstrando excelência e comprometimento..."
+                              value={formData.textoCertificado || ""}
+                              onChange={(e) =>
+                                setFormData({ ...formData, textoCertificado: e.target.value })
+                              }
+                              className="resize-none"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Use [NOME] para o nome do colaborador e [TÍTULO] para o título do treinamento. Se deixar vazio, será usado o texto padrão.
+                            </p>
+                          </div>
+                        )}
+
+                          <Card className="border-accent/30 bg-gradient-to-br from-accent/10 to-primary/5">
+                          <CardContent className="px-6 pt-6 text-center">
+                            <Award className="h-12 w-12 text-accent mx-auto mb-3" />
+                            <h4 className="font-bold text-lg mb-2">Certificado de Conclusão</h4>
+                            <p className="text-sm text-muted-foreground mb-4">
+                              {certificatePreviewText}
+                            </p>
+                            <div className="flex items-center justify-center gap-8 text-xs text-muted-foreground">
+                              <div>
+                                <p className="font-semibold">Data de Conclusão</p>
+                                <p>13/02/2026</p>
+                              </div>
+                              <div>
+                                <p className="font-semibold">Carga Horária</p>
+                                <p>-</p>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        <Card className="bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800">
+                          <CardContent className="pt-4">
+                            <div className="flex items-start gap-3">
+                              <Info className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                              <div className="text-sm space-y-2 text-blue-800 dark:text-blue-200">
+                                <p className="font-medium text-blue-900 dark:text-blue-100">Como funciona?</p>
+                                <div>• O certificado será gerado automaticamente após a conclusão</div>
+                                <div>• O colaborador poderá baixar o certificado em PDF</div>
+                                <div>• O certificado ficará disponível na área "Meus Certificados"</div>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* TASK 8 - ETAPA 7: PRAZOS E DISPONIBILIDADE */}
+              {currentStep === "prazos" && (
+                <Card className="clay-card border-0">
                 <CardHeader>
                   <CardTitle>Prazos e Disponibilidade</CardTitle>
                   <CardDescription>Configure quando o treinamento estará disponível</CardDescription>
@@ -2688,7 +3017,7 @@ export default function CriarTreinamentoPage() {
                 Anterior
               </Button>
 
-              {currentStepIndex === STEPS.filter((s) => shouldShowStep(s.id)).length - 1 ? (
+              {currentStep === "preview" ? (
                 <Button onClick={() => setShowPublishModal(true)} className="gap-2">
                   <Save className="h-4 w-4" />
                   Publicar Treinamento
@@ -2711,7 +3040,7 @@ export default function CriarTreinamentoPage() {
 
       {/* TASK 2 - Modal IA para Título e Descrição */}
       <Dialog open={showIaModal} onOpenChange={setShowIaModal}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+        <DialogContent style={{ maxWidth: '760px', width: 'min(90vw, 760px)' }}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-accent" />

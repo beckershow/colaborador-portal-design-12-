@@ -13,7 +13,7 @@ import { useAuth } from "@/lib/auth-context"
 import { getTraining, startTraining, completeTraining, answerTrainingQuestion, type TrainingDetail } from "@/lib/trainings-api"
 import { useState, useEffect } from "react"
 import { useRouter, useParams } from "next/navigation"
-import { ArrowLeft, CheckCircle2, Clock, FileText, Award, Download, AlertCircle, Repeat } from "lucide-react"
+import { ArrowLeft, CheckCircle2, Clock, FileText, Award, Download, AlertCircle, Repeat, Volume2, Eye } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 
@@ -28,12 +28,17 @@ export default function CourseViewPage() {
   const [isStarting, setIsStarting] = useState(false)
   const [isCompleting, setIsCompleting] = useState(false)
   const [answeredIds, setAnsweredIds] = useState<Set<string>>(new Set())
+  const [answeredCount, setAnsweredCount] = useState(0)
+  const [totalQuestions, setTotalQuestions] = useState(0)
   const [answerDrafts, setAnswerDrafts] = useState<Record<string, string | string[]>>({})
   const [isAnswering, setIsAnswering] = useState<Record<string, boolean>>({})
   const [showCertificate, setShowCertificate] = useState(false)
   const [showQuiz, setShowQuiz] = useState(false)
   const [quizAnswers, setQuizAnswers] = useState<Record<string, string>>({})
   const [showRefazerModal, setShowRefazerModal] = useState(false)
+  const isCompleted = !!progress?.completedAt
+  const hasQuestions = (course?.questions || []).length > 0
+  const allQuestionsAnswered = totalQuestions === 0 ? true : answeredCount >= totalQuestions
 
   useEffect(() => {
     if (!user) return
@@ -50,6 +55,9 @@ export default function CourseViewPage() {
         }
         const answered = new Set((res.data.userQuestionProgress || []).map((q) => q.questionId))
         setAnsweredIds(answered)
+        const total = res.data.questions?.length || 0
+        setTotalQuestions(total)
+        setAnsweredCount(answered.size)
       } catch (error: any) {
         toast({
           title: "Treinamento não encontrado",
@@ -65,7 +73,7 @@ export default function CourseViewPage() {
 
   const handleCompleteLesson = () => {
     if (!user || !course) return
-    if (progress?.completedAt || (progress?.progress ?? 0) >= 100) {
+    if (progress?.completedAt) {
       toast({
         title: "Treinamento já concluído",
         description: "Este treinamento já está marcado como concluído.",
@@ -139,6 +147,14 @@ export default function CourseViewPage() {
         progress: res.data.progress.progress,
       }))
       setAnsweredIds((prev) => new Set(prev).add(questionId))
+      if (typeof res.data.answered === "number") {
+        setAnsweredCount(res.data.answered)
+      } else {
+        setAnsweredCount((prev) => prev + 1)
+      }
+      if (typeof res.data.total === "number") {
+        setTotalQuestions(res.data.total)
+      }
       toast({
         title: "Resposta registrada",
         description: "A resposta foi salva com sucesso.",
@@ -240,8 +256,8 @@ export default function CourseViewPage() {
       <EngageSidebar />
       <RoleSwitcherDev />
 
-      <main className="ml-72 flex-1 p-8">
-        <div className="mx-auto max-w-6xl">
+      <main className="ml-72 flex-1 pt-6 pb-6 px-0">
+        <div className="w-full max-w-none">
           {/* Header */}
           <div className="mb-8">
             <Button variant="ghost" onClick={() => router.push("/treinamentos")} className="mb-4">
@@ -268,65 +284,82 @@ export default function CourseViewPage() {
             </CardContent>
           </Card>
 
-          <div className="grid grid-cols-3 gap-6">
-            <div className="col-span-2">
-              <Card className="clay-card border-0">
-                <CardContent className="p-6 space-y-6">
-                  <div className="rounded-lg bg-muted/30 p-6">
-                    <h2 className="text-2xl font-bold text-foreground">Conteúdo do Treinamento</h2>
-                    <p className="mt-3 text-muted-foreground">
-                      {course.contentText || "Nenhum conteúdo textual fornecido."}
-                    </p>
-                  </div>
-
-                  {course.contentFiles && course.contentFiles.length > 0 && (
-                    <div>
-                      <h3 className="mb-3 font-semibold text-foreground">Arquivos</h3>
-                      <div className="space-y-2">
-                        {course.contentFiles.map((file, idx) => (
-                          <div key={`${file}-${idx}`} className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <FileText className="h-4 w-4" />
-                            <span className="truncate">{file}</span>
-                          </div>
-                        ))}
-                      </div>
+          <div className="space-y-6">
+            <Card className="clay-card border-0">
+              <CardContent className="p-6 space-y-6">
+                <div className="rounded-lg bg-muted/30 p-6">
+                  <h2 className="text-2xl font-bold text-foreground">Conteúdo do Treinamento</h2>
+                  <p className="mt-3 text-muted-foreground">
+                    {course.contentText || "Nenhum conteúdo textual fornecido."}
+                  </p>
+                  {course.summaryAudioUrl && (
+                    <div className="mt-4 flex items-center gap-3 rounded-md border bg-background p-3">
+                      <Volume2 className="h-4 w-4 text-muted-foreground" />
+                      <audio controls src={course.summaryAudioUrl} className="w-full" />
                     </div>
                   )}
+                </div>
 
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={handleStartTraining}
-                      className="flex-1 clay-button"
-                      size="lg"
-                      disabled={isStarting || !!progress}
-                    >
-                      {progress ? "Iniciado" : isStarting ? "Iniciando..." : "Iniciar"}
-                    </Button>
-                    <Button
-                      onClick={handleCompleteLesson}
-                      className="flex-1 clay-button"
-                      size="lg"
-                      disabled={
-                        isCompleting ||
-                        !progress ||
-                        (progress?.completedAt || (progress?.progress ?? 0) >= 100) ||
-                        (course.questionsRequired && (course.questions?.length || 0) > answeredIds.size)
-                      }
-                    >
-                      {isCompleting ? "Concluindo..." : "Concluir"}
-                    </Button>
+                {(course.contentFileUrls && course.contentFileUrls.length > 0) ||
+                (course.contentFiles && course.contentFiles.length > 0) ? (
+                  <div>
+                    <h3 className="mb-3 font-semibold text-foreground">Arquivos</h3>
+                    <div className="space-y-2">
+                      {(course.contentFileUrls && course.contentFileUrls.length > 0
+                        ? course.contentFileUrls
+                        : (course.contentFiles || []).map((key) => ({ key, url: key.startsWith("http") ? key : "" }))
+                      ).map((file, idx) => {
+                        const fileUrl = file.url || (file.key.startsWith("http") ? file.key : "")
+                        return (
+                          <div key={`${file.key}-${idx}`} className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <FileText className="h-4 w-4" />
+                            <span className="truncate">{file.key}</span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="ml-auto"
+                              onClick={() => fileUrl && window.open(fileUrl, "_blank", "noopener,noreferrer")}
+                              disabled={!fileUrl}
+                              aria-label="Visualizar arquivo"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
-                </CardContent>
-              </Card>
-            </div>
+                ) : null}
 
-            <div>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleStartTraining}
+                    className="flex-1 clay-button"
+                    size="lg"
+                    disabled={isStarting || !!progress}
+                  >
+                    {progress ? "Iniciado" : isStarting ? "Iniciando..." : "Iniciar"}
+                  </Button>
+                  <Button
+                    onClick={() => setShowQuiz(true)}
+                    className="flex-1 clay-button"
+                    size="lg"
+                    disabled={!progress || isCompleted || !hasQuestions}
+                  >
+                    Iniciar avaliação
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {(showQuiz || isCompleted) ? (
               <Card className="clay-card border-0">
                 <CardContent className="p-6">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="font-semibold text-foreground">Questões do Treinamento</h3>
                     <span className="text-xs text-muted-foreground">
-                      {answeredIds.size}/{course.questions?.length || 0} respondidas
+                      {answeredCount}/{totalQuestions} respondidas
                     </span>
                   </div>
                   <div className="space-y-4">
@@ -340,8 +373,8 @@ export default function CourseViewPage() {
                         const draftValue = answerDrafts[q.id] ?? (isCheckbox ? [] : "")
 
                         return (
-                          <div key={q.id} className="rounded-lg border p-3 space-y-3">
-                            <p className="text-sm font-medium text-foreground">
+                          <div key={q.id} className="rounded-xl border bg-muted/10 p-6 space-y-4">
+                            <p className="text-base font-semibold text-foreground">
                               {index + 1}. {q.question}
                             </p>
 
@@ -368,6 +401,7 @@ export default function CourseViewPage() {
                                             setAnswerDrafts((prev) => ({ ...prev, [q.id]: opt }))
                                           }
                                         }}
+                                        disabled={isCompleted}
                                       />
                                       <span>{opt}</span>
                                     </label>
@@ -376,10 +410,11 @@ export default function CourseViewPage() {
                               </div>
                             ) : (
                               <Textarea
-                                rows={3}
+                                rows={4}
                                 value={typeof draftValue === "string" ? draftValue : ""}
                                 onChange={(e) => setAnswerDrafts((prev) => ({ ...prev, [q.id]: e.target.value }))}
                                 placeholder="Digite sua resposta"
+                                disabled={isCompleted}
                               />
                             )}
 
@@ -390,7 +425,7 @@ export default function CourseViewPage() {
                               <Button
                                 size="sm"
                                 onClick={() => handleAnswerQuestion(q.id)}
-                                disabled={isAnswering[q.id] || isAnswered}
+                                disabled={isAnswering[q.id] || isAnswered || isCompleted}
                               >
                                 {isAnswered ? "Respondida" : isAnswering[q.id] ? "Salvando..." : "Enviar resposta"}
                               </Button>
@@ -400,9 +435,25 @@ export default function CourseViewPage() {
                       })
                     )}
                   </div>
+
+                  <div className="mt-6">
+                    <Button
+                      onClick={handleCompleteLesson}
+                      className="w-full clay-button"
+                      size="lg"
+                      disabled={
+                        isCompleting ||
+                        !progress ||
+                        isCompleted ||
+                        !allQuestionsAnswered
+                      }
+                    >
+                      {isCompleting ? "Concluindo..." : "Concluir"}
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
-            </div>
+            ) : null}
           </div>
         </div>
       </main>

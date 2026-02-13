@@ -537,7 +537,10 @@ export default function HomePage() {
               </Card>
 
               {/* CARD 2 - METAS (CARD DEDICADO) */}
-              <Card className="clay-card border-0">
+              <Card className="clay-card border-0 relative opacity-60 grayscale pointer-events-none">
+                <Badge className="absolute right-3 top-3 bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+                  Em breve
+                </Badge>
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -616,23 +619,19 @@ export default function HomePage() {
                               </div>
                             )}
 
-                            <Link href="/metas">
-                              <Button variant="ghost" size="sm" className="mt-2 w-full">
-                                Ver detalhes completos
-                                <ArrowRight className="ml-2 h-4 w-4" />
-                              </Button>
-                            </Link>
+                            <Button variant="ghost" size="sm" className="mt-2 w-full" disabled>
+                              Ver detalhes completos
+                              <ArrowRight className="ml-2 h-4 w-4" />
+                            </Button>
                           </div>
                         )
                       })}
 
                       {metas.length > 3 && (
-                        <Link href="/metas">
-                          <Button variant="outline" size="sm" className="w-full bg-transparent">
-                            Ver todas as metas ({metas.length})
-                            <ArrowRight className="ml-2 h-4 w-4" />
-                          </Button>
-                        </Link>
+                        <Button variant="outline" size="sm" className="w-full bg-transparent" disabled>
+                          Ver todas as metas ({metas.length})
+                          <ArrowRight className="ml-2 h-4 w-4" />
+                        </Button>
                       )}
                     </div>
                   )}
@@ -691,10 +690,10 @@ export default function HomePage() {
                       <p className="text-xs text-muted-foreground">Estrelas</p>
                     </div>
 
-                    <div 
-                      className="rounded-lg bg-muted/30 p-3 text-center cursor-pointer hover:bg-muted/50 transition-colors"
-                      onClick={() => router.push("/metas")}
-                    >
+                    <div className="relative rounded-lg bg-muted/30 p-3 text-center opacity-60 grayscale pointer-events-none">
+                      <Badge className="absolute right-2 top-2 bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 text-[10px] px-1.5 py-0 h-4">
+                        Em breve
+                      </Badge>
                       <Target className="mx-auto h-5 w-5 text-chart-3 mb-1" />
                       <p className="text-xl font-bold text-foreground">
                         {MetasService.getMetasConcluidasColaborador(user.id)}/
@@ -1522,7 +1521,10 @@ export default function HomePage() {
             </Card>
 
             {/* TASK 6: METAS DO TIME - ACOMPANHAMENTO CONTÍNUO */}
-            <Card className="clay-card border-0 border-l-4 border-l-primary">
+            <Card className="clay-card border-0 border-l-4 border-l-primary relative opacity-60 grayscale pointer-events-none">
+              <Badge className="absolute right-3 top-3 bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+                Em breve
+              </Badge>
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -1577,12 +1579,10 @@ export default function HomePage() {
                           <Progress value={meta.progressoTime} className="h-1.5" />
                         </div>
 
-                        <Link href="/analytics?tab=metas">
-                          <Button variant="ghost" size="sm" className="mt-2 w-full h-7 text-xs">
-                            Ver detalhes
-                            <ArrowRight className="ml-2 h-3 w-3" />
-                          </Button>
-                        </Link>
+                        <Button variant="ghost" size="sm" className="mt-2 w-full h-7 text-xs" disabled>
+                          Ver detalhes
+                          <ArrowRight className="ml-2 h-3 w-3" />
+                        </Button>
                       </div>
                     )
                   })}

@@ -462,7 +462,7 @@ export default function CreateEngajamentoPage() {
   return (
     <>
       <Dialog open={showAIDialog} onOpenChange={setShowAIDialog}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent style={{ maxWidth: '760px', width: 'min(90vw, 760px)' }}>
           <DialogHeader>
             <DialogTitle>Assistente de IA - Gerar Título e Descrição</DialogTitle>
             <DialogDescription>
@@ -478,7 +478,7 @@ export default function CreateEngajamentoPage() {
               <textarea
                 value={aiObjective}
                 onChange={(e) => setAiObjective(e.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-foreground min-h-[120px]"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-foreground min-h-[90px]"
                 placeholder="Ex: Aumentar o engajamento dos colaboradores no feed social da empresa através de interações frequentes, promovendo a cultura de reconhecimento e compartilhamento de conhecimento..."
                 disabled={isAIGenerating}
               />
