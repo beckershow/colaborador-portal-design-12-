@@ -54,6 +54,7 @@ export type TrainingSummary = {
   description?: string | null
   coverType?: string | null
   coverUrl?: string | null
+  coverSignedUrl?: string | null
   primaryColor?: string | null
   campaignId?: string | null
   audienceType?: string | null
@@ -74,6 +75,7 @@ export type TrainingDetail = {
   description?: string | null
   coverType?: "upload" | "url" | null
   coverUrl?: string | null
+  coverSignedUrl?: string | null
   primaryColor?: string | null
   campaignId?: string | null
   contentOrigin?: "texto" | "documento" | "audio" | "video" | null

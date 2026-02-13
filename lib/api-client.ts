@@ -102,8 +102,9 @@ export async function apiFetch<T = unknown>(
   }
 
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ message: `HTTP ${res.status}` }))
-    throw new Error(error.message || `Erro ${res.status}`)
+    const json = await res.json().catch(() => ({ message: `HTTP ${res.status}` }))
+    const msg = json?.error?.message || json?.message || `Erro ${res.status}`
+    throw new Error(msg)
   }
 
   // Handle 204 No Content

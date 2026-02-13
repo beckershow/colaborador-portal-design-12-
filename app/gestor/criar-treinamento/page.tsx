@@ -91,6 +91,7 @@ interface TrainingData {
   capa: {
     tipo: "upload" | "url"
     valor: string
+    previewUrl?: string // Signed URL or data URI for preview display
   }
   corPrincipal: string
 
@@ -266,6 +267,7 @@ export default function CriarTreinamentoPage() {
       capa: {
         tipo: data.coverType || "url",
         valor: data.coverUrl || "",
+        previewUrl: data.coverSignedUrl || data.coverUrl || "",
       },
       corPrincipal: data.primaryColor || "#3b82f6",
       vinculadoCampanha: !!data.campaignId,
@@ -685,10 +687,46 @@ export default function CriarTreinamentoPage() {
 
     try {
       setIsPublishing(true)
+
+      // Build payload with only fields the backend expects
+      const payload: Record<string, unknown> = {
+        titulo: formData.titulo,
+        descricao: formData.descricao,
+        capa: { tipo: formData.capa.tipo, valor: formData.capa.valor },
+        corPrincipal: formData.corPrincipal,
+        vinculadoCampanha: formData.vinculadoCampanha,
+        campanhaId: formData.campanhaId,
+        conteudoOrigem: formData.conteudoOrigem,
+        conteudoTexto: formData.conteudoTexto,
+        conteudoArquivo: formData.conteudoArquivo,
+        conteudoArquivos: formData.conteudoArquivos,
+        semAvaliacao: formData.semAvaliacao,
+        converterConteudo: formData.converterConteudo,
+        tipoConversao: formData.tipoConversao,
+        disponibilizarOriginal: formData.disponibilizarOriginal,
+        percentualResumo: formData.percentualResumo,
+        resumoGerado: formData.resumoGerado,
+        resumoConfirmado: formData.resumoConfirmado,
+        resumoAudioKey: formData.resumoAudioKey,
+        iaConfig: formData.iaConfig,
+        iaConversoes: formData.iaConversoes,
+        colaboradorVe: formData.colaboradorVe,
+        questoes: formData.questoes.map(({ id, ...q }) => q),
+        ordemObrigatoria: formData.ordemObrigatoria,
+        publicoTipo: formData.publicoTipo,
+        colaboradoresSelecionados: formData.colaboradoresSelecionados,
+        questoesObrigatorias: formData.questoesObrigatorias,
+        dataInicio: formData.dataInicio || undefined,
+        dataFim: formData.dataFim || undefined,
+        ganhosAtivos: formData.ganhosAtivos,
+        xp: formData.xp,
+        estrelas: formData.estrelas,
+      }
+
       if (isEditMode && editId) {
-        await updateTraining(editId, formData)
+        await updateTraining(editId, payload as any)
       } else {
-        await createTraining(formData)
+        await createTraining(payload as any)
       }
       toast({
         title: isEditMode ? "Treinamento Atualizado!" : "Treinamento Publicado!",
@@ -878,7 +916,7 @@ export default function CriarTreinamentoPage() {
                 className="h-32 bg-cover bg-center"
                 style={{
                   backgroundColor: formData.corPrincipal,
-                  backgroundImage: formData.capa.valor ? `url(${formData.capa.valor})` : "none",
+                  backgroundImage: (formData.capa.previewUrl || formData.capa.valor) ? `url(${formData.capa.previewUrl || formData.capa.valor})` : "none",
                 }}
               >
               </div>
@@ -1080,9 +1118,10 @@ export default function CriarTreinamentoPage() {
                           if (file) {
                             const reader = new FileReader()
                             reader.onloadend = () => {
+                              const dataUri = reader.result as string
                               setFormData({
                                 ...formData,
-                                capa: { tipo: "upload", valor: reader.result as string },
+                                capa: { tipo: "upload", valor: dataUri, previewUrl: dataUri },
                               })
                             }
                             reader.readAsDataURL(file)
@@ -1117,7 +1156,7 @@ export default function CriarTreinamentoPage() {
                     {formData.capa.tipo === "upload" && formData.capa.valor ? (
                       <div className="space-y-2">
                         <div className="relative w-full h-32 rounded border overflow-hidden">
-                          <img src={formData.capa.valor || "/placeholder.svg"} alt="Preview" className="w-full h-full object-cover" />
+                          <img src={formData.capa.previewUrl || formData.capa.valor || "/placeholder.svg"} alt="Preview" className="w-full h-full object-cover" />
                         </div>
                         <Button
                           type="button"

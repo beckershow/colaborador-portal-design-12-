@@ -89,7 +89,7 @@ export default function TrainingPage() {
       <div
         className="h-40 rounded-t-xl bg-cover bg-center"
         style={{
-          backgroundImage: course.coverUrl ? `url(${course.coverUrl})` : "none",
+          backgroundImage: (course.coverSignedUrl || course.coverUrl) ? `url(${course.coverSignedUrl || course.coverUrl})` : "none",
           backgroundColor: "hsl(var(--muted))",
         }}
       >
