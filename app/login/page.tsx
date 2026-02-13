@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Eye, EyeOff, Loader2, Zap } from "lucide-react"
+import { Eye, EyeOff, Loader2 } from "lucide-react"
+import Image from "next/image"
 
 export default function LoginPage() {
   const { login, user, isLoading: authLoading } = useAuth()
@@ -55,10 +56,14 @@ export default function LoginPage() {
       <div className="w-full max-w-md space-y-6">
         {/* Logo / Brand */}
         <div className="flex flex-col items-center gap-2 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg">
-            <Zap className="h-6 w-6" />
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight">EngageAI</h1>
+          <Image
+            src="/logo-apdata.png"
+            alt="APData"
+            width={180}
+            height={60}
+            className="object-contain"
+            priority
+          />
           <p className="text-sm text-muted-foreground">Portal do Colaborador</p>
         </div>
 
