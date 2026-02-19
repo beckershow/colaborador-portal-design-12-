@@ -7,7 +7,7 @@ services:
         - NEXT_PUBLIC_API_URL=http://100.64.30.21:3002/api/v1
     container_name: engageai-front-12
     ports:
-      - "3000:3000"
+      - "3004:3004"
     restart: always
     environment:
       - NODE_ENV=production
