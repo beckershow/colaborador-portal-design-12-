@@ -12,3 +12,4 @@ services:
     environment:
       - NODE_ENV=production
       - NEXT_PUBLIC_API_URL=http://100.64.30.21:3002/api/v1
+      - PORT=3004
