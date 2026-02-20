@@ -33,11 +33,16 @@ import { GamificationGuard } from "@/lib/gamification-guard"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 
-export function EngageSidebar() {
+export function EngageSidebar({
+  isCollapsed,
+  setIsCollapsed,
+}: {
+  isCollapsed: boolean
+  setIsCollapsed: (value: boolean) => void
+}) {
   const pathname = usePathname()
   const router = useRouter()
   const { user, hasPermission, logout } = useAuth()
-  const [isCollapsed, setIsCollapsed] = useState(false)
 
   const handleLogout = async () => {
     await logout()
@@ -68,7 +73,7 @@ export function EngageSidebar() {
   const modulosColaborador = [
     { name: "Humor do Dia", href: "/humor", icon: Heart },
     // { name: "Feedbacks", href: "/feedbacks", icon: MessageSquare },
-    // { name: "Pesquisas", href: "/pesquisas", icon: ClipboardList },
+    { name: "Pesquisas", href: "/pesquisas", icon: ClipboardList },
     { name: "Treinamentos", href: "/treinamentos", icon: GraduationCap },
     { name: "Eventos", href: "/eventos", icon: Calendar }, // TASK 1: Novo item
     { name: "Carreira e Seleção", href: "/carreira-selecao", icon: TrendingUp, comingSoon: true },
@@ -87,6 +92,8 @@ export function EngageSidebar() {
       ? [{ name: "Calibragem de Ganhos", href: "/configuracoes-ganhos", icon: Settings }]
       : []),
   ]
+
+  const iconClass = isCollapsed ? "h-6 w-6 shrink-0" : "h-5 w-5 shrink-0"
 
   return (
     <aside
@@ -174,7 +181,7 @@ export function EngageSidebar() {
                 )}
                 title={isCollapsed ? item.name : undefined}
               >
-                <item.icon className="h-5 w-5" />
+                <item.icon className={iconClass} />
                 {!isCollapsed && item.name}
               </Link>
             )
@@ -196,7 +203,7 @@ export function EngageSidebar() {
                 )}
                 title={isCollapsed ? item.name : undefined}
               >
-                <item.icon className="h-5 w-5" />
+                <item.icon className={iconClass} />
                 {!isCollapsed && item.name}
               </Link>
             )
@@ -248,7 +255,7 @@ export function EngageSidebar() {
                   )}
                   title={isCollapsed ? item.name : undefined}
                 >
-                  <item.icon className="h-5 w-5" />
+                  <item.icon className={iconClass} />
                   {!isCollapsed && (
                     <span className="flex items-center gap-2 flex-1">
                       {item.name}
@@ -289,7 +296,7 @@ export function EngageSidebar() {
                     )}
                     title={isCollapsed ? item.name : undefined}
                   >
-                    <item.icon className="h-5 w-5" />
+                    <item.icon className={iconClass} />
                     {!isCollapsed && item.name}
                   </Link>
                 )
@@ -320,7 +327,7 @@ export function EngageSidebar() {
                 )}
                 title={isCollapsed ? item.name : undefined}
               >
-                <item.icon className="h-5 w-5" />
+                <item.icon className={iconClass} />
                 {!isCollapsed && item.name}
               </Link>
             )

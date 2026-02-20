@@ -1,6 +1,5 @@
 "use client"
 
-import { EngageSidebar } from "@/components/engage-sidebar"
 import { RoleSwitcherDev } from "@/components/role-switcher-dev"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -213,11 +212,9 @@ export default function SurveyResponsePage({ params }: { params: { surveyId: str
 
   if (isCompleted) {
     return (
-      <div className="flex min-h-screen bg-background">
-        <EngageSidebar />
+      <>
         <RoleSwitcherDev />
-
-        <main className="ml-72 flex flex-1 items-center justify-center p-8">
+        <div className="flex flex-1 items-center justify-center py-8">
           <Card className="clay-card w-full max-w-2xl border-0">
             <CardContent className="py-16 text-center">
               <div className="mb-6 flex justify-center">
@@ -238,18 +235,15 @@ export default function SurveyResponsePage({ params }: { params: { surveyId: str
               <p className="mt-6 text-sm text-muted-foreground">Redirecionando para a página de pesquisas...</p>
             </CardContent>
           </Card>
-        </main>
-      </div>
+        </div>
+      </>
     )
   }
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <EngageSidebar />
+    <>
       <RoleSwitcherDev />
-
-      <main className="ml-72 flex-1 p-8">
-        <div className="mx-auto max-w-3xl">
+      <div className="mx-auto max-w-3xl py-8">
           {/* Header */}
           <div className="mb-8">
             <Button variant="ghost" onClick={() => router.push("/pesquisas")} className="mb-4">
@@ -324,7 +318,6 @@ export default function SurveyResponsePage({ params }: { params: { surveyId: str
             </p>
           </div>
         </div>
-      </main>
-    </div>
+    </>
   )
 }

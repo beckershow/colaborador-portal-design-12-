@@ -14,8 +14,8 @@
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.25 0.02 180);
 
-  /* Verde EngageAI #04554C - Primary */
-  --primary: oklch(0.34 0.076 177);
+  /* Laranja EngageAI - Primary */
+  --primary: oklch(0.68 0.18 50);
   --primary-foreground: oklch(1 0 0);
 
   /* Amarelo Suave - Secondary */
@@ -46,18 +46,18 @@
 
   --border: oklch(0.92 0.01 180);
   --input: oklch(0.96 0.005 120);
-  --ring: oklch(0.34 0.076 177);
+  --ring: oklch(0.68 0.18 50);
 
   --radius: 1rem;
 
   --sidebar: oklch(1 0 0);
   --sidebar-foreground: oklch(0.3 0.02 180);
-  --sidebar-primary: oklch(0.34 0.076 177);
+  --sidebar-primary: oklch(0.68 0.18 50);
   --sidebar-primary-foreground: oklch(1 0 0);
   --sidebar-accent: oklch(0.96 0.005 120);
   --sidebar-accent-foreground: oklch(0.3 0.02 180);
   --sidebar-border: oklch(0.94 0.01 180);
-  --sidebar-ring: oklch(0.34 0.076 177);
+  --sidebar-ring: oklch(0.68 0.18 50);
 }
 
 .dark {
@@ -70,7 +70,7 @@
   --popover: oklch(0.2 0.01 180);
   --popover-foreground: oklch(0.95 0.005 120);
 
-  --primary: oklch(0.46 0.076 177);
+  --primary: oklch(0.75 0.18 50);
   --primary-foreground: oklch(1 0 0);
 
   --secondary: oklch(0.25 0.01 180);
@@ -87,16 +87,16 @@
 
   --border: oklch(0.3 0.01 180);
   --input: oklch(0.25 0.01 180);
-  --ring: oklch(0.46 0.076 177);
+  --ring: oklch(0.75 0.18 50);
 
   --sidebar: oklch(0.18 0.01 180);
   --sidebar-foreground: oklch(0.95 0.005 120);
-  --sidebar-primary: oklch(0.46 0.076 177);
+  --sidebar-primary: oklch(0.75 0.18 50);
   --sidebar-primary-foreground: oklch(1 0 0);
   --sidebar-accent: oklch(0.25 0.01 180);
   --sidebar-accent-foreground: oklch(0.95 0.005 120);
   --sidebar-border: oklch(0.3 0.01 180);
-  --sidebar-ring: oklch(0.46 0.076 177);
+  --sidebar-ring: oklch(0.75 0.18 50);
 }
 
 @theme inline {
@@ -205,10 +205,10 @@ select {
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: oklch(0.34 0.076 177 / 0.2);
+  background: oklch(0.68 0.18 50 / 0.2);
   border-radius: 3px;
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.34 0.076 177 / 0.3);
+  background: oklch(0.68 0.18 50 / 0.3);
 }

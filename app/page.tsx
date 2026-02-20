@@ -38,7 +38,6 @@ import {
   MapPin,
   MapPinOff,
 } from "lucide-react"
-import { HumorPopupModal } from "@/components/humor-popup-modal"
 import { Sparkles } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { EngagementTrackingService } from "@/lib/engagement-tracking-service"
@@ -347,8 +346,6 @@ export default function HomePage() {
   if (isColaborador && GamificationGuard.shouldShowGamificationUI(user.role)) {
     return (
       <>
-        <HumorPopupModal />
-        
         <div className="container mx-auto max-w-7xl space-y-8 p-6">
           {/* Header */}
           <div className="mb-8">

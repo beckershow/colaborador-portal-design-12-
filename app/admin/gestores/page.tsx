@@ -3,7 +3,6 @@
 import { useEffect } from "react"
 
 import { useState, useMemo } from "react"
-import { EngageSidebar } from "@/components/engage-sidebar"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -252,11 +251,8 @@ export default function GestoresManagementPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <EngageSidebar />
-
-      <main className="flex-1 p-4 sm:p-6 lg:p-8">
-        <div className="container mx-auto max-w-7xl space-y-8">
+    <>
+      <div className="space-y-8">
           <div>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-3">
@@ -530,7 +526,6 @@ export default function GestoresManagementPage() {
             </CardContent>
           </Card>
         </div>
-      </main>
 
       <Dialog open={showPermissionsDialog} onOpenChange={setShowPermissionsDialog}>
         <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
@@ -982,6 +977,6 @@ export default function GestoresManagementPage() {
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   )
 }

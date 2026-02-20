@@ -1,6 +1,5 @@
 "use client"
 
-import { EngageSidebar } from "@/components/engage-sidebar"
 import { RoleSwitcherDev } from "@/components/role-switcher-dev"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -174,11 +173,9 @@ export default function CourseViewPage() {
 
   if (showCertificate) {
     return (
-      <div className="flex min-h-screen bg-background">
-        <EngageSidebar />
+      <>
         <RoleSwitcherDev />
-
-        <main className="ml-72 flex flex-1 items-center justify-center p-8">
+        <div className="flex flex-1 items-center justify-center py-8">
           <Card className="clay-card w-full max-w-3xl border-0">
             <CardContent className="py-16 text-center">
               <div className="mb-6 flex justify-center">
@@ -246,18 +243,15 @@ export default function CourseViewPage() {
               </div>
             </CardContent>
           </Card>
-        </main>
-      </div>
+        </div>
+      </>
     )
   }
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <EngageSidebar />
+    <>
       <RoleSwitcherDev />
-
-      <main className="ml-72 flex-1 pt-6 pb-6 px-0">
-        <div className="w-full max-w-none">
+      <div className="w-full max-w-none pt-6 pb-6">
           {/* Header */}
           <div className="mb-8">
             <Button variant="ghost" onClick={() => router.push("/treinamentos")} className="mb-4">
@@ -456,7 +450,6 @@ export default function CourseViewPage() {
             ) : null}
           </div>
         </div>
-      </main>
 
       {/* Modal de Refazer Treinamento */}
       <Dialog open={showRefazerModal} onOpenChange={setShowRefazerModal}>
@@ -488,6 +481,6 @@ export default function CourseViewPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   )
 }

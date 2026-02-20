@@ -2451,12 +2451,10 @@ function SuasCriacoesPanel() {
             <Target className="h-4 w-4" />
             Campanhas
           </TabsTrigger>
-          {/*
           <TabsTrigger value="pesquisa" className="flex items-center gap-2">
             <ClipboardList className="h-4 w-4" />
             Pesquisas
           </TabsTrigger>
-          */}
           <TabsTrigger value="treinamento" className="flex items-center gap-2">
             <GraduationCap className="h-4 w-4" />
             Treinamentos
@@ -2476,7 +2474,7 @@ function SuasCriacoesPanel() {
         </TabsList>
 
         {/* Content for all tabs */}
-        {(["ultimas", "campanha", /* "pesquisa", */ "treinamento", "meta", "missao-do-dia", "evento"] as const).map((tabValue) => (
+        {(["ultimas", "campanha", "pesquisa", "treinamento", "meta", "missao-do-dia", "evento"] as const).map((tabValue) => (
           <TabsContent key={tabValue} value={tabValue} className="space-y-4">
             {isLoadingCreations ? (
               <Card className="clay-card border-0">
