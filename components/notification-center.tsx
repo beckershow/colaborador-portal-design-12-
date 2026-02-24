@@ -1,208 +1,266 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
+import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { NotificationService, type Notification } from "@/lib/notification-service"
 import { useAuth } from "@/lib/auth-context"
-import { Bell, User, Gift, CheckCircle, X, Clock } from "lucide-react"
+import {
+  Bell, User, Gift, CheckCircle, X, Clock,
+  Heart, MessageCircle, ThumbsUp, AlertCircle,
+} from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from "@/components/ui/dialog"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  fetchNotifications,
+  markNotificationRead,
+  markAllNotificationsRead,
+  type ApiNotification,
+} from "@/lib/notifications-api"
+import { setFeedPostStatus } from "@/lib/feed-api"
 
 export function NotificationCenter() {
-  const { user, hasPermission } = useAuth()
+  const { user } = useAuth()
   const { toast } = useToast()
-  const [isOpen, setIsOpen] = useState(false)
-  const [notifications, setNotifications] = useState<Notification[]>([])
-  const [unreadCount, setUnreadCount] = useState(0)
+  const router = useRouter()
 
-  const canViewNotifications = hasPermission(["gestor", "super-admin"])
+  const [isOpen, setIsOpen] = useState(false)
+  const [notifications, setNotifications] = useState<ApiNotification[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [loading, setLoading] = useState(false)
+  const [rejectingNotif, setRejectingNotif] = useState<ApiNotification | null>(null)
+  const [rejectReason, setRejectReason] = useState("")
+
+  // ─── Carregar notificações ───────────────────────────────────────────────────
+  const loadNotifications = useCallback(async () => {
+    if (!user) return
+    try {
+      const res = await fetchNotifications(1, 50)
+      // super_admin não tem time — filtra post_pending_approval
+      const filtered =
+        user.role === "super-admin"
+          ? res.data.filter(n => n.type !== "post_pending_approval")
+          : res.data
+      setNotifications(filtered)
+      setUnreadCount(filtered.filter(n => n.status === "unread").length)
+    } catch {
+      // sem conexão — silencioso
+    }
+  }, [user])
+
+  // Carrega na abertura do painel e a cada 15s quando aberto
+  useEffect(() => {
+    loadNotifications()
+  }, [loadNotifications])
 
   useEffect(() => {
-    if (!canViewNotifications) return
+    const interval = setInterval(loadNotifications, 15_000)
+    return () => clearInterval(interval)
+  }, [loadNotifications])
 
-    const unsubscribe = NotificationService.subscribe((updatedNotifications) => {
-      setNotifications(updatedNotifications)
-      setUnreadCount(NotificationService.getUnreadCount())
-    })
+  // ─── Ações ───────────────────────────────────────────────────────────────────
 
-    return unsubscribe
-  }, [canViewNotifications])
-
-  if (!canViewNotifications) return null
-
-  const handleMarkAsRead = (id: string) => {
-    NotificationService.markAsRead(id)
+  const handleMarkRead = async (id: string) => {
+    await markNotificationRead(id).catch(() => {})
+    setNotifications(prev =>
+      prev.map(n => n.id === id ? { ...n, status: "read" as const, readAt: new Date().toISOString() } : n),
+    )
+    setUnreadCount(c => Math.max(0, c - 1))
   }
 
-  const handleMarkAllAsRead = () => {
-    NotificationService.markAllAsRead()
+  const handleMarkAllRead = async () => {
+    await markAllNotificationsRead().catch(() => {})
+    setNotifications(prev => prev.map(n => ({ ...n, status: "read" as const })))
+    setUnreadCount(0)
   }
 
-  const handleClearAll = () => {
-    NotificationService.clearAll()
+  // ─── Aprovação de posts (post_pending_approval) ───────────────────────────────
+
+  const handleApprovePost = async (notif: ApiNotification) => {
+    const postId = (notif.data?.postId as string) ?? ""
+    if (!postId) return
+    setLoading(true)
+    try {
+      await setFeedPostStatus(postId, "approve")
+      await markNotificationRead(notif.id)
+      setNotifications(prev => prev.filter(n => n.id !== notif.id))
+      setUnreadCount(c => Math.max(0, c - 1))
+      // Sinaliza à página de comunidade para atualizar o feed
+      window.dispatchEvent(new Event("engageai:feed-updated"))
+      toast({ title: "Publicação aprovada", description: "O colaborador foi notificado." })
+    } catch (err) {
+      toast({
+        title: "Erro ao aprovar",
+        description: (err as Error).message,
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleRejectPost = (notif: ApiNotification) => {
+    setRejectingNotif(notif)
+    setRejectReason("")
+  }
+
+  const handleConfirmRejectPost = async () => {
+    if (!rejectingNotif) return
+    const notif = rejectingNotif
+    const postId = (notif.data?.postId as string) ?? ""
+    if (!postId) return
+    setRejectingNotif(null)
+    setLoading(true)
+    try {
+      await setFeedPostStatus(postId, "reject", rejectReason.trim() || undefined)
+      await markNotificationRead(notif.id)
+      setNotifications(prev => prev.filter(n => n.id !== notif.id))
+      setUnreadCount(c => Math.max(0, c - 1))
+      window.dispatchEvent(new Event("engageai:feed-updated"))
+      toast({ title: "Publicação recusada", description: "O colaborador foi notificado." })
+    } catch (err) {
+      toast({
+        title: "Erro ao recusar",
+        description: (err as Error).message,
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+      setRejectReason("")
+    }
+  }
+
+  // ─── Navegação inteligente ────────────────────────────────────────────────────
+
+  const navigateToPost = (postId: string, openComments = false) => {
     setIsOpen(false)
-  }
-
-  const handleApprove = (notification: Notification) => {
-    if (notification.type === "profile_change") {
-      const changes = notification.data.changes
-      const userId = notification.userId
-
-      // Aplicar mudanças no localStorage (backend simulado)
-      const usersData = localStorage.getItem("engageai-users-data") || "{}"
-      const users = JSON.parse(usersData)
-
-      if (!users[userId]) {
-        users[userId] = {}
-      }
-
-      // Aplicar cada mudança
-      Object.keys(changes).forEach((field) => {
-        users[userId][field] = changes[field]
-      })
-
-      localStorage.setItem("engageai-users-data", JSON.stringify(users))
-
+    const isSamePage = typeof window !== "undefined" && window.location.pathname === "/comunidade"
+    if (isSamePage) {
       window.dispatchEvent(
-        new CustomEvent("user-data-updated", {
-          detail: { userId, changes },
-        }),
+        new CustomEvent("engageai:highlight-post", { detail: { postId, openComments } }),
       )
-
-      // Notificar o colaborador da aprovação
-      NotificationService.notifyPostApproved(userId, notification.userName)
-
-      toast({
-        title: "Solicitação Aprovada",
-        description: `As alterações de ${notification.userName} foram aplicadas com sucesso.`,
-      })
-    } else if (notification.type === "reward_request") {
-      toast({
-        title: "Resgate Aprovado",
-        description: `O resgate de "${notification.data.reward.name}" foi aprovado para ${notification.userName}.`,
-      })
-    } else if (notification.type === "post_pending_approval") {
-      const postId = notification.data.post.id
-      if (postId) {
-        const postsData = localStorage.getItem("engageai-posts") || "[]"
-        const posts = JSON.parse(postsData)
-        const post = posts.find((p: any) => p.id === postId)
-        if (post) {
-          post.status = "approved"
-          post.approvedAt = new Date().toISOString()
-          localStorage.setItem("engageai-posts", JSON.stringify(posts))
-
-          window.dispatchEvent(new Event("posts-updated"))
-        }
+    } else {
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("engageai-highlight-post", JSON.stringify({ postId, openComments }))
       }
-
-      NotificationService.notifyPostApproved(notification.userId, notification.userName)
-
-      toast({
-        title: "Publicação Aprovada",
-        description: `A publicação de ${notification.userName} está visível no feed.`,
-      })
+      router.push("/comunidade")
     }
-
-    NotificationService.removeNotification(notification.id)
   }
 
-  const handleReject = (notification: Notification) => {
-    if (notification.type === "profile_change") {
-      NotificationService.notifyPostRejected(
-        notification.userId,
-        notification.userName,
-        "Solicitação de alteração de dados recusada pelo gestor",
-      )
+  const handleNotificationClick = (notif: ApiNotification) => {
+    handleMarkRead(notif.id)
 
-      toast({
-        title: "Solicitação Recusada",
-        description: `As alterações solicitadas por ${notification.userName} foram recusadas e o colaborador foi notificado.`,
-        variant: "destructive",
-      })
-    } else if (notification.type === "post_pending_approval") {
-      const postId = notification.data.post.id
-      if (postId) {
-        const postsData = localStorage.getItem("engageai-posts") || "[]"
-        const posts = JSON.parse(postsData)
-        const updatedPosts = posts.filter((p: any) => p.id !== postId)
-        localStorage.setItem("engageai-posts", JSON.stringify(updatedPosts))
-      }
+    const postId = notif.data?.postId as string | undefined
 
-      NotificationService.notifyPostRejected(
-        notification.userId,
-        notification.userName,
-        "Publicação recusada pelo gestor",
-      )
-
-      toast({
-        title: "Publicação Recusada",
-        description: `A publicação de ${notification.userName} foi recusada e o colaborador foi notificado.`,
-        variant: "destructive",
-      })
+    switch (notif.type) {
+      case "post_liked":
+      case "post_approved":
+        if (postId) navigateToPost(postId)
+        else { setIsOpen(false); router.push("/comunidade") }
+        break
+      case "post_commented":
+        if (postId) navigateToPost(postId, true)
+        else { setIsOpen(false); router.push("/comunidade") }
+        break
+      case "post_rejected":
+        // Leva direto para /comunidade onde a seção de rejeitados aparece no topo
+        setIsOpen(false)
+        router.push("/comunidade")
+        break
+      case "post_pending_approval":
+        setIsOpen(false)
+        router.push("/comunidade")
+        break
+      case "reward_redeemed":
+        setIsOpen(false)
+        router.push("/recompensas")
+        break
+      case "feedback_received":
+      case "feedback_approved":
+        setIsOpen(false)
+        router.push("/feedbacks")
+        break
+      case "survey_available":
+        setIsOpen(false)
+        router.push("/pesquisas")
+        break
+      default:
+        // informativas: apenas fechar
+        setIsOpen(false)
     }
-
-    // Remover a notificação após recusar
-    NotificationService.removeNotification(notification.id)
   }
 
-  const getNotificationIcon = (type: string) => {
+  // ─── Helpers de display ───────────────────────────────────────────────────────
+
+  const getIcon = (type: ApiNotification["type"]) => {
     switch (type) {
-      case "profile_change":
-        return <User className="h-5 w-5 text-primary" />
-      case "reward_request":
-        return <Gift className="h-5 w-5 text-accent" />
-      default:
-        return <Bell className="h-5 w-5" />
+      case "post_pending_approval": return <Clock className="h-5 w-5 text-yellow-500" />
+      case "post_approved":        return <CheckCircle className="h-5 w-5 text-green-500" />
+      case "post_rejected":        return <X className="h-5 w-5 text-destructive" />
+      case "post_liked":           return <Heart className="h-5 w-5 text-rose-500" />
+      case "post_commented":       return <MessageCircle className="h-5 w-5 text-primary" />
+      case "xp_gained":            return <ThumbsUp className="h-5 w-5 text-primary" />
+      case "level_up":             return <AlertCircle className="h-5 w-5 text-accent" />
+      case "reward_redeemed":      return <Gift className="h-5 w-5 text-accent" />
+      case "feedback_received":
+      case "feedback_approved":    return <User className="h-5 w-5 text-primary" />
+      default:                     return <Bell className="h-5 w-5 text-muted-foreground" />
     }
   }
 
-  const getNotificationTitle = (notification: Notification) => {
-    switch (notification.type) {
-      case "profile_change":
-        return "Solicitação de Alteração de Dados"
-      case "reward_request":
-        return "Solicitação de Resgate"
-      case "post_pending_approval":
-        return "Publicação Aguardando Aprovação"
-      default:
-        return "Notificação"
-    }
-  }
-
-  const getNotificationDescription = (notification: Notification) => {
-    switch (notification.type) {
-      case "profile_change":
-        const changes = notification.data.changes
-        const fields = Object.keys(changes).join(", ")
-        return `${notification.userName} solicitou alteração em: ${fields}`
-      case "reward_request":
-        return `${notification.userName} solicitou resgate de "${notification.data.reward.name}" (${notification.data.reward.cost} estrelas)`
-      case "post_pending_approval":
-        return `${notification.userName} criou uma nova publicação aguardando sua aprovação`
-      default:
-        return ""
-    }
-  }
-
-  const formatTime = (timestamp: string) => {
-    const now = new Date()
-    const notifTime = new Date(timestamp)
-    const diffMs = now.getTime() - notifTime.getTime()
-    const diffMins = Math.floor(diffMs / 60000)
-
-    if (diffMins < 1) return "Agora"
+  const formatTime = (iso: string) => {
+    const diffMins = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000)
+    if (diffMins < 1)  return "Agora"
     if (diffMins < 60) return `Há ${diffMins}min`
-    const diffHours = Math.floor(diffMins / 60)
-    if (diffHours < 24) return `Há ${diffHours}h`
-    const diffDays = Math.floor(diffHours / 24)
-    return `Há ${diffDays}d`
+    const h = Math.floor(diffMins / 60)
+    if (h < 24) return `Há ${h}h`
+    return `Há ${Math.floor(h / 24)}d`
   }
+
+  const isActionRequired = (n: ApiNotification) => n.type === "post_pending_approval"
+
+  if (!user) return null
 
   return (
     <>
-      <Button variant="ghost" size="icon" className="relative" onClick={() => setIsOpen(!isOpen)} title="Notificações">
+      {/* Dialog: motivo de recusa */}
+      <Dialog open={rejectingNotif !== null} onOpenChange={open => { if (!open) { setRejectingNotif(null); setRejectReason("") } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Recusar publicação</DialogTitle>
+            <DialogDescription>
+              Informe opcionalmente o motivo da recusa. O colaborador será notificado e poderá ver o motivo.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            placeholder="Motivo da recusa (opcional)..."
+            value={rejectReason}
+            onChange={e => setRejectReason(e.target.value)}
+            className="min-h-[80px] resize-none"
+          />
+          <div className="flex justify-end gap-2 mt-2">
+            <Button variant="ghost" onClick={() => { setRejectingNotif(null); setRejectReason("") }}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmRejectPost}>
+              Confirmar recusa
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Botão do sino */}
+      <Button
+        variant="ghost"
+        size="icon"
+        className="relative"
+        onClick={() => setIsOpen(!isOpen)}
+        title="Notificações"
+      >
         <Bell className="h-5 w-5" />
         {unreadCount > 0 && (
           <Badge className="absolute -right-1 -top-1 h-5 w-5 rounded-full p-0 text-xs flex items-center justify-center bg-destructive text-destructive-foreground">
@@ -213,7 +271,10 @@ export function NotificationCenter() {
 
       {isOpen && (
         <>
+          {/* Overlay */}
           <div className="fixed inset-0 z-40 bg-black/20" onClick={() => setIsOpen(false)} />
+
+          {/* Painel */}
           <div className="fixed right-4 top-16 z-50 w-[400px] max-h-[600px] animate-in slide-in-from-top-5">
             <Card className="clay-card border shadow-xl">
               <CardHeader>
@@ -231,27 +292,18 @@ export function NotificationCenter() {
                   </Button>
                 </div>
                 {notifications.length > 0 && (
-                  <div className="flex gap-2 mt-4">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleMarkAllAsRead}
-                      className="flex-1 clay-button bg-transparent"
-                    >
-                      <CheckCircle className="mr-2 h-4 w-4" />
-                      Marcar todas como lidas
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleClearAll}
-                      className="flex-1 clay-button bg-transparent"
-                    >
-                      Limpar todas
-                    </Button>
-                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleMarkAllRead}
+                    className="mt-4 clay-button bg-transparent"
+                  >
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                    Marcar todas como lidas
+                  </Button>
                 )}
               </CardHeader>
+
               <CardContent className="max-h-[450px] overflow-y-auto space-y-3">
                 {notifications.length === 0 ? (
                   <div className="py-12 text-center">
@@ -259,77 +311,63 @@ export function NotificationCenter() {
                     <p className="mt-4 text-sm text-muted-foreground">Nenhuma notificação no momento</p>
                   </div>
                 ) : (
-                  notifications.map((notif) => (
+                  notifications.map(notif => (
                     <div
                       key={notif.id}
-                      className={`rounded-lg border p-4 transition-all cursor-pointer hover:shadow-md ${
-                        notif.read ? "bg-card border-border" : "bg-primary/5 border-primary/30"
+                      className={`rounded-lg border p-4 transition-all ${
+                        isActionRequired(notif) ? "cursor-default" : "cursor-pointer hover:shadow-md"
+                      } ${
+                        notif.status === "unread"
+                          ? "bg-primary/5 border-primary/30"
+                          : "bg-card border-border"
                       }`}
-                      onClick={() => handleMarkAsRead(notif.id)}
+                      onClick={() => !isActionRequired(notif) && handleNotificationClick(notif)}
                     >
                       <div className="flex gap-3">
-                        <div className="flex-shrink-0 mt-1">{getNotificationIcon(notif.type)}</div>
+                        <div className="flex-shrink-0 mt-1">{getIcon(notif.type)}</div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between gap-2">
-                            <h4 className="font-semibold text-sm text-foreground">{getNotificationTitle(notif)}</h4>
-                            {!notif.read && (
-                              <Badge variant="default" className="flex-shrink-0">
-                                Novo
-                              </Badge>
+                            <h4 className="font-semibold text-sm text-foreground">{notif.title}</h4>
+                            {notif.status === "unread" && (
+                              <Badge variant="default" className="flex-shrink-0">Novo</Badge>
                             )}
                           </div>
-                          <p className="mt-1 text-sm text-muted-foreground">{getNotificationDescription(notif)}</p>
+                          <p className="mt-1 text-sm text-muted-foreground">{notif.message}</p>
+
+                          {/* Preview do conteúdo para post_pending_approval */}
+                          {notif.type === "post_pending_approval" && notif.data?.content != null && (
+                            <p className="mt-1 text-xs text-foreground/70 line-clamp-2 italic">
+                              &ldquo;{String(notif.data.content)}&rdquo;
+                            </p>
+                          )}
+
                           <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
                             <Clock className="h-3 w-3" />
-                            {formatTime(notif.timestamp)}
+                            {formatTime(notif.createdAt)}
                           </div>
 
-                          {notif.type === "profile_change" && (
-                            <div className="mt-3 space-y-2 p-3 rounded-lg bg-muted/50">
-                              <p className="text-xs font-semibold text-foreground">Campos alterados:</p>
-                              {Object.entries(notif.data.changes).map(([field, value]) => (
-                                <div key={field} className="text-xs">
-                                  <span className="font-medium text-muted-foreground">{field}:</span>{" "}
-                                  <span className="text-foreground">{value as string}</span>
-                                </div>
-                              ))}
+                          {/* Ações para aprovação de posts */}
+                          {isActionRequired(notif) && (
+                            <div className="mt-3 flex gap-2">
+                              <Button
+                                size="sm"
+                                className="clay-button"
+                                disabled={loading}
+                                onClick={e => { e.stopPropagation(); handleApprovePost(notif) }}
+                              >
+                                Aprovar
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="clay-button bg-transparent"
+                                disabled={loading}
+                                onClick={e => { e.stopPropagation(); handleRejectPost(notif) }}
+                              >
+                                Recusar
+                              </Button>
                             </div>
                           )}
-
-                          {notif.type === "post_pending_approval" && notif.data.post && (
-                            <div className="mt-3 p-3 rounded-lg bg-muted/50">
-                              <p className="text-xs text-foreground line-clamp-3">{notif.data.post.content}</p>
-                              {notif.data.post.hasImage && (
-                                <Badge variant="secondary" className="mt-2">
-                                  Contém imagem
-                                </Badge>
-                              )}
-                            </div>
-                          )}
-
-                          <div className="mt-3 flex gap-2">
-                            <Button
-                              size="sm"
-                              className="clay-button"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleApprove(notif)
-                              }}
-                            >
-                              Aprovar
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="clay-button bg-transparent"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleReject(notif)
-                              }}
-                            >
-                              Recusar
-                            </Button>
-                          </div>
                         </div>
                       </div>
                     </div>
