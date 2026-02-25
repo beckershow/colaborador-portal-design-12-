@@ -76,10 +76,10 @@ export default function RecompensasPage() {
         getAvailableStoreItems(),
         getMyStoreRedemptions(),
       ])
-      setRecompensas(itemsRes.data)
-      setMeusResgates(resgatesRes.data)
-    } catch {
-      // silencioso
+      setRecompensas(itemsRes.data || [])
+      setMeusResgates(resgatesRes.data || [])
+    } catch (err) {
+      console.error(err)
     }
   }
 
@@ -107,7 +107,7 @@ export default function RecompensasPage() {
       setShowToast(true)
       setTimeout(() => setShowToast(false), 3000)
       // Recarrega itens pois a quantidade pode ter diminuído
-      getAvailableStoreItems().then(r => setRecompensas(r.data)).catch(() => {})
+      getAvailableStoreItems().then(r => setRecompensas(r.data)).catch(() => { })
     } catch (err) {
       setToastMessage((err as Error).message || "Erro ao realizar resgate. Tente novamente.")
       setToastType("error")
@@ -241,6 +241,8 @@ do resgate realizado.
           </Card>
         </div>
       )}
+
+
 
       <div className="mb-8 flex items-center justify-between">
         <div>
@@ -391,13 +393,12 @@ do resgate realizado.
                           </p>
                           <Badge
                             variant="default"
-                            className={`mt-1 text-xs ${
-                              resgate.status === "fulfilled"
-                                ? "bg-blue-600"
-                                : resgate.status === "cancelled"
-                                  ? "bg-red-600"
-                                  : "bg-green-600"
-                            }`}
+                            className={`mt-1 text-xs ${resgate.status === "fulfilled"
+                              ? "bg-blue-600"
+                              : resgate.status === "cancelled"
+                                ? "bg-red-600"
+                                : "bg-green-600"
+                              }`}
                           >
                             {resgate.status === "fulfilled"
                               ? "Entregue"

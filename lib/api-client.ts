@@ -65,7 +65,6 @@ export async function apiFetch<T = unknown>(
   if (accessToken) {
     headers["Authorization"] = `Bearer ${accessToken}`
   }
-
   let res = await fetch(`${BASE_URL}${path}`, { ...options, headers })
 
   if (res.status === 401) {

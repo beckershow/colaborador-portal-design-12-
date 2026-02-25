@@ -24,6 +24,7 @@ export interface User {
   hiredAt?: string
   bio?: string
   createdAt?: string
+  managerId?: string
 }
 
 interface AuthContextType {
@@ -43,15 +44,15 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 // Static user list kept for backward compatibility with analytics services that still use mock data
 export const mockUsers: User[] = [
   { id: "1", nome: "Carlos Eduardo Santos", email: "carlos.eduardo@engageai.com", avatar: "/professional-avatar-man.jpg", cargo: "Diretor de RH", departamento: "Recursos Humanos", role: "super-admin", nivel: 10, xp: 5000, xpProximo: 6000, estrelas: 500 },
-  { id: "2", nome: "Marina Oliveira", email: "marina.oliveira@engageai.com", avatar: "/professional-avatar-woman-glasses.jpg", cargo: "Gerente de Marketing", departamento: "Time Criativo", role: "gestor", nivel: 7, xp: 3200, xpProximo: 4000, estrelas: 280, timeGerenciado: ["3","4","5"] },
+  { id: "2", nome: "Marina Oliveira", email: "marina.oliveira@engageai.com", avatar: "/professional-avatar-woman-glasses.jpg", cargo: "Gerente de Marketing", departamento: "Time Criativo", role: "gestor", nivel: 7, xp: 3200, xpProximo: 4000, estrelas: 280, timeGerenciado: ["3", "4", "5"] },
   { id: "3", nome: "Ana Carolina Silva", email: "ana.carolina@engageai.com", avatar: "/professional-avatar-smiling-woman.jpg", cargo: "Analista de Marketing", departamento: "Time Criativo", role: "colaborador", nivel: 4, xp: 1200, xpProximo: 2300, estrelas: 150 },
   { id: "4", nome: "João Silva", email: "joao.silva@engageai.com", avatar: "/professional-avatar-smiling.jpg", cargo: "Designer", departamento: "Time Criativo", role: "colaborador", nivel: 5, xp: 2100, xpProximo: 3000, estrelas: 180 },
   { id: "5", nome: "Pedro Costa", email: "pedro.costa@engageai.com", avatar: "/professional-avatar-smiling.jpg", cargo: "Copywriter", departamento: "Time Criativo", role: "colaborador", nivel: 3, xp: 800, xpProximo: 1500, estrelas: 120 },
-  { id: "6", nome: "Lucas Andrade", email: "lucas.andrade@engageai.com", avatar: "/professional-avatar-man.jpg", cargo: "Gerente de Vendas", departamento: "Comercial", role: "gestor", nivel: 8, xp: 3800, xpProximo: 4500, estrelas: 320, timeGerenciado: ["11","12","13","14","15","16","17"] },
-  { id: "7", nome: "Fernanda Costa", email: "fernanda.costa@engageai.com", avatar: "/professional-avatar-woman.jpg", cargo: "Gerente de Tecnologia", departamento: "TI", role: "gestor", nivel: 9, xp: 4200, xpProximo: 5000, estrelas: 380, timeGerenciado: ["18","19","20","21","22","23","24","25","26","27"] },
-  { id: "8", nome: "Rafael Lima", email: "rafael.lima@engageai.com", avatar: "/professional-avatar-smiling.jpg", cargo: "Gerente de Operações", departamento: "Operações", role: "gestor", nivel: 7, xp: 3100, xpProximo: 4000, estrelas: 260, timeGerenciado: ["28","29","30","31","32","33"] },
-  { id: "9", nome: "Bruno Martins", email: "bruno.martins@engageai.com", avatar: "/professional-avatar-man.jpg", cargo: "Gerente de Produtos", departamento: "Produto", role: "gestor", nivel: 8, xp: 3600, xpProximo: 4500, estrelas: 300, timeGerenciado: ["34","35","36","37","38","39","40"] },
-  { id: "10", nome: "Juliana Santos", email: "juliana.santos@engageai.com", avatar: "/professional-avatar-woman-glasses.jpg", cargo: "Gerente de Atendimento", departamento: "Customer Success", role: "gestor", nivel: 6, xp: 2800, xpProximo: 3500, estrelas: 240, timeGerenciado: ["41","42","43","44","45"] },
+  { id: "6", nome: "Lucas Andrade", email: "lucas.andrade@engageai.com", avatar: "/professional-avatar-man.jpg", cargo: "Gerente de Vendas", departamento: "Comercial", role: "gestor", nivel: 8, xp: 3800, xpProximo: 4500, estrelas: 320, timeGerenciado: ["11", "12", "13", "14", "15", "16", "17"] },
+  { id: "7", nome: "Fernanda Costa", email: "fernanda.costa@engageai.com", avatar: "/professional-avatar-woman.jpg", cargo: "Gerente de Tecnologia", departamento: "TI", role: "gestor", nivel: 9, xp: 4200, xpProximo: 5000, estrelas: 380, timeGerenciado: ["18", "19", "20", "21", "22", "23", "24", "25", "26", "27"] },
+  { id: "8", nome: "Rafael Lima", email: "rafael.lima@engageai.com", avatar: "/professional-avatar-smiling.jpg", cargo: "Gerente de Operações", departamento: "Operações", role: "gestor", nivel: 7, xp: 3100, xpProximo: 4000, estrelas: 260, timeGerenciado: ["28", "29", "30", "31", "32", "33"] },
+  { id: "9", nome: "Bruno Martins", email: "bruno.martins@engageai.com", avatar: "/professional-avatar-man.jpg", cargo: "Gerente de Produtos", departamento: "Produto", role: "gestor", nivel: 8, xp: 3600, xpProximo: 4500, estrelas: 300, timeGerenciado: ["34", "35", "36", "37", "38", "39", "40"] },
+  { id: "10", nome: "Juliana Santos", email: "juliana.santos@engageai.com", avatar: "/professional-avatar-woman-glasses.jpg", cargo: "Gerente de Atendimento", departamento: "Customer Success", role: "gestor", nivel: 6, xp: 2800, xpProximo: 3500, estrelas: 240, timeGerenciado: ["41", "42", "43", "44", "45"] },
   { id: "11", nome: "Rodrigo Ferreira", email: "rodrigo.ferreira@engageai.com", avatar: "/professional-avatar-man.jpg", cargo: "Executivo de Vendas", departamento: "Comercial", role: "colaborador", nivel: 5, xp: 2200, xpProximo: 3000, estrelas: 190 },
   { id: "12", nome: "Camila Alves", email: "camila.alves@engageai.com", avatar: "/professional-avatar-smiling-woman.jpg", cargo: "Executiva de Vendas", departamento: "Comercial", role: "colaborador", nivel: 6, xp: 2600, xpProximo: 3500, estrelas: 210 },
   { id: "13", nome: "Thiago Souza", email: "thiago.souza@engageai.com", avatar: "/professional-avatar-smiling.jpg", cargo: "Analista de Vendas", departamento: "Comercial", role: "colaborador", nivel: 4, xp: 1400, xpProximo: 2300, estrelas: 140 },
@@ -115,6 +116,7 @@ function mapBackendUser(data: Record<string, unknown>, teamIds?: string[]): User
     hiredAt: data.hiredAt as string | undefined,
     bio: data.bio as string | undefined,
     createdAt: data.createdAt as string | undefined,
+    managerId: data.managerId as string | undefined,
   }
 }
 

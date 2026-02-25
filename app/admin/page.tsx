@@ -439,6 +439,7 @@ function LojinhaProfissionalPanel() {
   const [itemParaAtivar, setItemParaAtivar] = useState<string | null>(null)
   const [ativarScope, setAtivarScope] = useState<"all" | "specific">("all")
   const [ativarUserIds, setAtivarUserIds] = useState<string[]>([])
+  const [ativarSearchTerm, setAtivarSearchTerm] = useState("")
   const [gestorActiveTab, setGestorActiveTab] = useState<"estoque" | "extrato" | "solicitacoes">(
     initialSubtab && ["estoque", "extrato", "solicitacoes"].includes(initialSubtab) ? initialSubtab : "estoque"
   )
@@ -1655,6 +1656,7 @@ function LojinhaProfissionalPanel() {
                                     setItemParaAtivar(inv.itemId)
                                     setAtivarScope("all")
                                     setAtivarUserIds([])
+                                    setAtivarSearchTerm("")
                                     setShowAtivarDialog(true)
                                   }}
                                 >
@@ -1983,27 +1985,46 @@ function LojinhaProfissionalPanel() {
               </div>
 
               {ativarScope === "specific" && (
-                <div className="mt-4 max-h-48 overflow-y-auto space-y-2 border rounded p-2">
-                  {gestorTeam.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center">Nenhum membro encontrado.</p>
-                  ) : (
-                    gestorTeam.map((member) => (
-                      <div key={member.id} className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          id={`member-${member.id}`}
-                          checked={ativarUserIds.includes(member.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) setAtivarUserIds([...ativarUserIds, member.id])
-                            else setAtivarUserIds(ativarUserIds.filter(id => id !== member.id))
-                          }}
-                        />
-                        <label htmlFor={`member-${member.id}`} className="text-sm flex-1 cursor-pointer">
-                          {member.nome} <span className="text-xs text-muted-foreground">({member.cargo})</span>
-                        </label>
-                      </div>
-                    ))
-                  )}
+                <div className="space-y-4">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Filtrar por nome..."
+                      className="pl-9"
+                      value={ativarSearchTerm}
+                      onChange={(e) => setAtivarSearchTerm(e.target.value)}
+                    />
+                  </div>
+                  <div className="max-h-48 overflow-y-auto space-y-2 border rounded p-2">
+                    {gestorTeam.filter(m =>
+                      m.nome.toLowerCase().includes(ativarSearchTerm.toLowerCase()) ||
+                      m.cargo.toLowerCase().includes(ativarSearchTerm.toLowerCase())
+                    ).length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center">Nenhum membro encontrado.</p>
+                    ) : (
+                      gestorTeam
+                        .filter(m =>
+                          m.nome.toLowerCase().includes(ativarSearchTerm.toLowerCase()) ||
+                          m.cargo.toLowerCase().includes(ativarSearchTerm.toLowerCase())
+                        )
+                        .map((member) => (
+                          <div key={member.id} className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              id={`member-${member.id}`}
+                              checked={ativarUserIds.includes(member.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) setAtivarUserIds([...ativarUserIds, member.id])
+                                else setAtivarUserIds(ativarUserIds.filter(id => id !== member.id))
+                              }}
+                            />
+                            <label htmlFor={`member-${member.id}`} className="text-sm flex-1 cursor-pointer">
+                              {member.nome} <span className="text-xs text-muted-foreground">({member.cargo})</span>
+                            </label>
+                          </div>
+                        ))
+                    )}
+                  </div>
                 </div>
               )}
             </div>
