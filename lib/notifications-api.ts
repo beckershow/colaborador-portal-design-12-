@@ -21,6 +21,15 @@ export type ApiNotificationType =
   | "post_rejected"
   | "post_liked"
   | "post_commented"
+  | "store_item_created"
+  | "store_item_activated"
+  | "store_item_available_to_manager"
+  | "store_item_available_to_team"
+  | "store_item_sent_to_manager"
+  | "store_manager_item_activated"
+  | "store_manager_item_deactivated"
+  | "store_reward_requested"
+  | "store_reward_request_reviewed"
 
 export interface ApiNotification {
   id: string

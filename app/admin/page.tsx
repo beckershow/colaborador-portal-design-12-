@@ -60,11 +60,31 @@ import {
 import { CriacaoCentralizadaService } from "@/lib/criacao-centralizada-service"
 import { AnalyticsService } from "@/lib/analytics-service"
 import {
-  LojinhaProfissionalService,
-  type ItemLojinha,
-  type SolicitacaoResgate,
-  type HistoricoAuditoria,
-} from "@/lib/lojinha-profissional-service"
+  getStoreItems,
+  getStoreCategories,
+  createStoreItem,
+  updateStoreItem,
+  deleteStoreItem,
+  setStoreItemStatus,
+  getManagerStoreItems,
+  setTeamVisibility,
+  getTeamRedemptions,
+  updateRedemptionStatus,
+  getManagerInventory,
+  setManagerInventoryStatus,
+  createRewardRequest,
+  getRewardRequests,
+  reviewRewardRequest,
+  getAuditLogs,
+  type StoreItem,
+  type StoreCategory,
+  type StoreRedemption,
+  type StoreManagerInventory,
+  type StoreRewardRequest,
+  type StoreAuditLog,
+} from "@/lib/store-api"
+import { uploadFileToBackend } from "@/lib/uploads-api"
+import { apiFetch } from "@/lib/api-client"
 import { useToast } from "@/hooks/use-toast"
 import React, { Suspense } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -369,354 +389,266 @@ function LojinhaProfissionalPanel() {
   const isSuperAdmin = hasPermission("super-admin") || previewRole === "super-admin"
   const isGestor = hasPermission("gestor") || previewRole === "gestor"
 
-  // Estados para Super Admin
-  const [itens, setItens] = useState<ItemLojinha[]>([])
-  const [activeTab, setActiveTab] = useState<"criar" | "rascunhos" | "aprovacao" | "criados" | "ativos" | "auditoria">(
+  // ── Estados Super Admin ──────────────────────────────────────────────────────
+  const [itens, setItens] = useState<StoreItem[]>([])
+  const [categories, setCategories] = useState<StoreCategory[]>([])
+  const [gestoresLista, setGestoresLista] = useState<{ id: string; nome: string; cargo: string }[]>([])
+  const [loadingItens, setLoadingItens] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [activeTab, setActiveTab] = useState<"criar" | "rascunhos" | "aprovacao" | "criados" | "ativos" | "auditoria" | "solicitacoes">(
     "criar",
   )
-  const [isCreating, setIsCreating] = useState(false)
   const [editingItem, setEditingItem] = useState<string | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [formData, setFormData] = useState({
     nome: "",
-    categoria: "Vales",
+    categoriaId: "",
     descricao: "",
-    custo: 0,
+    custoEstrelas: 0,
     quantidade: null as number | null,
-    imagem: "",
     gestoresDisponiveis: [] as string[],
-    requerAprovacaoSuperior: false,
     observacoesInternas: "",
   })
 
-  // Estados para aprovação superior
-  const [showAprovacaoDialog, setShowAprovacaoDialog] = useState(false)
-  const [itemParaAprovar, setItemParaAprovar] = useState<ItemLojinha | null>(null)
-  const [justificativaAprovacao, setJustificativaAprovacao] = useState("")
-
-  // Estados para Gestor
-  const [estoque, setEstoque] = useState<ItemLojinha[]>([])
-  const [solicitacoesResgate, setSolicitacoesResgate] = useState<SolicitacaoResgate[]>([])
+  // ── Estados Gestor ──────────────────────────────────────────────────────────
+  const [estoque, setEstoque] = useState<StoreItem[]>([])
+  const [gestorInventory, setGestorInventory] = useState<StoreManagerInventory[]>([])
+  const [resgatesTime, setResgatesTime] = useState<StoreRedemption[]>([])
   const [showSolicitarDialog, setShowSolicitarDialog] = useState(false)
+  const [togglingItemId, setTogglingItemId] = useState<string | null>(null)
+  const [updatingRedemptionId, setUpdatingRedemptionId] = useState<string | null>(null)
+  const [filtroHistorico, setFiltroHistorico] = useState("todos")
+  const [auditLogs, setAuditLogs] = useState<StoreAuditLog[]>([])
+  const [rewardRequests, setRewardRequests] = useState<StoreRewardRequest[]>([])
   const [solicitacaoForm, setSolicitacaoForm] = useState({
-    nome: "",
-    descricao: "",
-    categoria: "Vales",
-    custoEstimado: 0,
-    justificativa: "",
+    nome: "", descricao: "", categoria: "Vales", custoEstimado: 0, justificativa: "",
   })
-
-  // Estados para histórico e auditoria
-  const [historico, setHistorico] = useState<HistoricoAuditoria[]>([])
-  const [filtroHistorico, setFiltroHistorico] = useState<"todos" | "criacao" | "aprovacao" | "ativacao" | "resgate">(
-    "todos",
-  )
 
   useEffect(() => {
     loadData()
   }, [isSuperAdmin, isGestor, user])
 
-  const loadData = () => {
-    if (isSuperAdmin) {
-      setItens(LojinhaProfissionalService.getAllItens())
-      setHistorico(LojinhaProfissionalService.getTodosLogs())
-    } else if (isGestor && user) {
-      const criados = LojinhaProfissionalService.getItensForGestor(user.id)
-      const ativos = LojinhaProfissionalService.getItensAtivosForGestor(user.id)
-      setEstoque([...ativos, ...criados])
-      setSolicitacoesResgate([])
+  const loadData = async () => {
+    setLoadingItens(true)
+    try {
+      if (isSuperAdmin) {
+        const [itensRes, catsRes, gestoresRes, auditRes, reqRes] = await Promise.all([
+          getStoreItems(),
+          getStoreCategories(),
+          apiFetch<{ data: any[] }>("/users?role=gestor&limit=200"),
+          getAuditLogs(),
+          getRewardRequests(),
+        ])
+        setItens(itensRes.data)
+        setCategories(catsRes.data)
+        setGestoresLista(gestoresRes.data || [])
+        setAuditLogs(auditRes.data)
+        setRewardRequests(reqRes.data)
+        // Setar categoriaId padrão se não tiver
+        if (!formData.categoriaId && catsRes.data.length > 0) {
+          setFormData(prev => ({ ...prev, categoriaId: catsRes.data[0].id }))
+        }
+      } else if (isGestor) {
+        const [invRes, resgRes] = await Promise.all([
+          getManagerInventory(),
+          getTeamRedemptions(),
+        ])
+        setGestorInventory(invRes.data)
+        setResgatesTime(resgRes.data)
+      }
+    } catch (err) {
+      toast({ title: "Erro ao carregar dados", description: (err as Error).message, variant: "destructive" })
+    } finally {
+      setLoadingItens(false)
     }
   }
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
+      setSelectedFile(file)
       const reader = new FileReader()
-      reader.onloadend = () => {
-        const result = reader.result as string
-        setImagePreview(result)
-        setFormData((prev) => ({ ...prev, imagem: result }))
-      }
+      reader.onloadend = () => setImagePreview(reader.result as string)
       reader.readAsDataURL(file)
     }
   }
 
   const removeImage = () => {
     setImagePreview(null)
-    setFormData((prev) => ({ ...prev, imagem: "" }))
+    setSelectedFile(null)
   }
 
-  const handleSubmitSuperAdmin = (salvarComoRascunho: boolean) => {
+  const handleSubmitSuperAdmin = async (salvarComoRascunho: boolean) => {
     if (!user) return
-
-    if (!formData.nome.trim() || !formData.descricao.trim() || formData.custo <= 0) {
-      toast({
-        title: "Erro de Validação",
-        description: "Preencha todos os campos obrigatórios",
-        variant: "destructive",
-      })
+    if (!formData.nome.trim() || !formData.descricao.trim() || !formData.categoriaId) {
+      toast({ title: "Erro de Validação", description: "Preencha nome, descrição e categoria.", variant: "destructive" })
       return
     }
-
-    // Validação: se gestoresDisponiveis não está vazio mas só tem placeholder, bloquear
     const gestoresValidos = formData.gestoresDisponiveis.filter(id => id !== "placeholder")
     if (formData.gestoresDisponiveis.length > 0 && gestoresValidos.length === 0) {
-      toast({
-        title: "Erro de Validação",
-        description: "Selecione ao menos 1 gestor ou escolha 'Disponível para todos os gestores'",
-        variant: "destructive",
-      })
+      toast({ title: "Erro de Validação", description: "Selecione ao menos 1 gestor ou 'Disponível para todos'.", variant: "destructive" })
       return
     }
 
-    if (editingItem) {
-      const updated = LojinhaProfissionalService.updateItem(
-        editingItem,
-        {
-          nome: formData.nome,
-          descricao: formData.descricao,
-          categoria: formData.categoria,
-          valorPontos: formData.custo,
-          valorFinanceiroEstimado: formData.custo * 10,
-          imagem: formData.imagem,
-          quantidade: formData.quantidade,
-          gestoresPermitidos: gestoresValidos,
-          timesPermitidos: [],
-          necessitaAprovacaoSuperior: formData.requerAprovacaoSuperior,
-        },
-        user.id,
-      )
+    setSaving(true)
+    try {
+      // Upload de imagem se houver arquivo selecionado
+      let imageUrl: string | null = editingItem
+        ? (itens.find(i => i.id === editingItem)?.imageUrl ?? null)
+        : null
 
-      if (updated) {
+      if (selectedFile) {
+        const uploadRes = await uploadFileToBackend(selectedFile, "store")
+        imageUrl = uploadRes.data.key
+      }
+
+      const payload = {
+        name: formData.nome,
+        categoryId: formData.categoriaId,
+        description: formData.descricao,
+        costStars: formData.custoEstrelas,
+        quantity: formData.quantidade,
+        imageUrl,
+        internalNotes: formData.observacoesInternas || null,
+        managerIds: gestoresValidos,
+      }
+
+      if (editingItem) {
+        await updateStoreItem(editingItem, payload)
+        toast({ title: "Item Atualizado", description: `${formData.nome} foi atualizado com sucesso.` })
+      } else {
+        await createStoreItem({ ...payload, status: salvarComoRascunho ? "draft" : "created" })
         toast({
-          title: "Item Atualizado",
-          description: `${formData.nome} foi atualizado com sucesso.`,
+          title: salvarComoRascunho ? "Rascunho Salvo" : "Item Criado",
+          description: salvarComoRascunho
+            ? "Rascunho salvo. Você pode continuar editando depois."
+            : "Item criado. Ative-o para disponibilizá-lo aos gestores.",
         })
-        loadData()
-        resetForm()
-      }
-    } else {
-      const novoItem = LojinhaProfissionalService.createItem(
-        {
-          nome: formData.nome,
-          descricao: formData.descricao,
-          categoria: formData.categoria,
-          valorPontos: formData.custo,
-          valorFinanceiroEstimado: formData.custo * 10,
-          imagem: formData.imagem,
-          quantidade: formData.quantidade,
-          gestoresPermitidos: gestoresValidos,
-          timesPermitidos: [],
-          necessitaAprovacaoSuperior: formData.requerAprovacaoSuperior,
-          status: salvarComoRascunho ? "rascunho" : formData.requerAprovacaoSuperior ? "em-aprovacao" : "criado",
-        },
-        user.id,
-      )
-
-      if (!salvarComoRascunho && formData.requerAprovacaoSuperior) {
-        LojinhaProfissionalService.solicitarAprovacaoSuperior(novoItem.id, user.id, formData.custo * 10)
+        if (!salvarComoRascunho) setActiveTab("criados")
       }
 
-      toast({
-        title: salvarComoRascunho ? "Rascunho Salvo" : "Item Criado",
-        description: salvarComoRascunho
-          ? "Rascunho salvo. Você pode continuar editando depois."
-          : formData.requerAprovacaoSuperior
-            ? "Item enviado para aprovação superior."
-            : "Item criado e pronto para ser ativado.",
-      })
-
-      loadData()
+      await loadData()
       resetForm()
+    } catch (err) {
+      toast({ title: "Erro ao salvar", description: (err as Error).message, variant: "destructive" })
+    } finally {
+      setSaving(false)
     }
   }
 
   const resetForm = () => {
-    setFormData({
+    setFormData(prev => ({
       nome: "",
-      categoria: "Vales",
+      categoriaId: categories[0]?.id ?? prev.categoriaId,
       descricao: "",
-      custo: 0,
+      custoEstrelas: 0,
       quantidade: null,
-      imagem: "",
       gestoresDisponiveis: [],
-      requerAprovacaoSuperior: false,
       observacoesInternas: "",
-    })
+    }))
     setImagePreview(null)
-    setIsCreating(false)
+    setSelectedFile(null)
     setEditingItem(null)
   }
 
-  const handleAprovar = (itemId: string) => {
-    const item = itens.find((i) => i.id === itemId)
-    if (!item) return
-    setItemParaAprovar(item)
-    setShowAprovacaoDialog(true)
-  }
-
-  const confirmarAprovacao = (aprovar: boolean) => {
-    if (!itemParaAprovar || !user) return
-
-    if (aprovar) {
-      const aprovacoes = LojinhaProfissionalService.getAprovacoesPendentes()
-      const aprovacao = aprovacoes.find((a) => a.itemId === itemParaAprovar.id)
-
-      if (aprovacao) {
-        LojinhaProfissionalService.aprovarItem(aprovacao.id, itemParaAprovar.id, user.id, justificativaAprovacao)
-      }
-
-      toast({
-        title: "Item Aprovado",
-        description: `${itemParaAprovar.nome} foi aprovado e está criado.`,
-      })
-    } else {
-      const aprovacoes = LojinhaProfissionalService.getAprovacoesPendentes()
-      const aprovacao = aprovacoes.find((a) => a.itemId === itemParaAprovar.id)
-
-      if (aprovacao) {
-        LojinhaProfissionalService.rejeitarItem(aprovacao.id, itemParaAprovar.id, user.id, justificativaAprovacao)
-      }
-
-      toast({
-        title: "Item Rejeitado",
-        description: `${itemParaAprovar.nome} foi rejeitado.`,
-        variant: "destructive",
-      })
-    }
-
-    loadData()
-    setShowAprovacaoDialog(false)
-    setItemParaAprovar(null)
-    setJustificativaAprovacao("")
-  }
-
-  const handleAtivarItem = (itemId: string) => {
-    if (!user) return
-    LojinhaProfissionalService.ativarItem(itemId, user.id)
-    toast({
-      title: "Item Ativado",
-      description: "Item ativado para os gestores.",
-    })
-    loadData()
-  }
-
-  const handleDesativarItem = (itemId: string) => {
-    if (!user) return
-    LojinhaProfissionalService.desativarItem(itemId, user.id)
-    toast({
-      title: "Item Desativado",
-      description: "Item desativado.",
-    })
-    loadData()
-  }
-
-  const handleDelete = (itemId: string) => {
-    if (confirm("Tem certeza que deseja remover este item?")) {
-      LojinhaProfissionalService.deleteItem(itemId, user?.id || "")
-      toast({
-        title: "Item Removido",
-        description: "O item foi removido com sucesso.",
-      })
-      loadData()
+  const handleAtivarItem = async (itemId: string) => {
+    try {
+      await setStoreItemStatus(itemId, "active")
+      toast({ title: "Item Ativado", description: "Item ativado. Gestores foram notificados." })
+      await loadData()
+    } catch (err) {
+      toast({ title: "Erro", description: (err as Error).message, variant: "destructive" })
     }
   }
 
-  const handleAtivarParaTime = (itemId: string) => {
-    if (!user) return
-    // Gestor ativa item mudando status para "ativo"
-    LojinhaProfissionalService.ativarItem(itemId, user.id)
-    toast({
-      title: "Item Ativado",
-      description: "Item ativado para seu time.",
-    })
-    loadData()
-  }
-
-  const handleDesativarParaTime = (itemId: string) => {
-    if (!user) return
-    // Gestor desativa item mudando status para "inativo"
-    LojinhaProfissionalService.desativarItem(itemId, user.id)
-    toast({
-      title: "Item Desativado",
-      description: "Item desativado para seu time.",
-    })
-    loadData()
-  }
-
-  const handleAprovarResgate = (solicitacaoId: string) => {
-    if (!user) return
-    toast({
-      title: "Funcionalidade em Desenvolvimento",
-      description: "Aprovação de resgates será implementada em breve.",
-    })
-  }
-
-  const handleRejeitarResgate = (solicitacaoId: string, motivo: string) => {
-    if (!user) return
-    toast({
-      title: "Funcionalidade em Desenvolvimento",
-      description: "Rejeição de resgates será implementada em breve.",
-    })
-  }
-
-  const handleSolicitarRecompensa = () => {
-    if (!user) return
-
-    if (!solicitacaoForm.nome || !solicitacaoForm.descricao || !solicitacaoForm.justificativa) {
-      toast({
-        title: "Erro",
-        description: "Preencha todos os campos obrigatórios.",
-        variant: "destructive",
-      })
-      return
+  const handleDesativarItem = async (itemId: string) => {
+    try {
+      await setStoreItemStatus(itemId, "inactive")
+      toast({ title: "Item Desativado", description: "Item desativado." })
+      await loadData()
+    } catch (err) {
+      toast({ title: "Erro", description: (err as Error).message, variant: "destructive" })
     }
+  }
 
-    const novoItem = LojinhaProfissionalService.createItem(
-      {
-        nome: solicitacaoForm.nome,
-        descricao: solicitacaoForm.descricao,
-        categoria: solicitacaoForm.categoria,
-        valorPontos: solicitacaoForm.custoEstimado,
-        valorFinanceiroEstimado: solicitacaoForm.custoEstimado * 10,
-        quantidade: null,
-        gestoresPermitidos: [user.id],
-        timesPermitidos: [],
-        necessitaAprovacaoSuperior: true,
-        status: "em-aprovacao",
-      },
-      user.id,
-    )
+  const handleDelete = async (itemId: string) => {
+    if (!confirm("Tem certeza que deseja remover este item?")) return
+    try {
+      await deleteStoreItem(itemId)
+      toast({ title: "Item Removido", description: "O item foi removido com sucesso." })
+      await loadData()
+    } catch (err) {
+      toast({ title: "Erro", description: (err as Error).message, variant: "destructive" })
+    }
+  }
 
-    LojinhaProfissionalService.solicitarAprovacaoSuperior(novoItem.id, user.id, solicitacaoForm.custoEstimado * 10)
+  const handleAtivarParaTime = async (itemId: string) => {
+    setTogglingItemId(itemId)
+    try {
+      await setTeamVisibility(itemId, { scope: "all" })
+      toast({ title: "Item Ativado", description: "Item disponibilizado para todo o seu time." })
+      await loadData()
+    } catch (err) {
+      toast({ title: "Erro", description: (err as Error).message, variant: "destructive" })
+    } finally {
+      setTogglingItemId(null)
+    }
+  }
 
-    toast({
-      title: "Solicitação Enviada",
-      description: "Sua solicitação foi enviada ao Super Admin.",
-    })
+  const handleDesativarParaTime = async (itemId: string) => {
+    setTogglingItemId(itemId)
+    try {
+      // Visibilidade vazia = item não aparece para colaboradores
+      await apiFetch(`/store/items/${itemId}/team-visibility`, {
+        method: "PATCH",
+        body: JSON.stringify({ scope: "specific", userIds: [] }),
+      })
+      toast({ title: "Item Desativado", description: "Item removido da lojinha do time." })
+      await loadData()
+    } catch (err) {
+      toast({ title: "Erro", description: (err as Error).message, variant: "destructive" })
+    } finally {
+      setTogglingItemId(null)
+    }
+  }
 
-    setShowSolicitarDialog(false)
-    setSolicitacaoForm({
-      nome: "",
-      descricao: "",
-      categoria: "Vales",
-      custoEstimado: 0,
-      justificativa: "",
-    })
+  const isItemAtivoParaTime = (item: StoreItem) => {
+    return (item.teamVisibility ?? []).some(tv => tv.teamScope === "all" || tv.userId !== null)
+  }
+
+  const handleSolicitarRecompensa = async () => {
+    setSaving(true)
+    try {
+      await createRewardRequest({
+        name: solicitacaoForm.nome,
+        description: solicitacaoForm.descricao,
+        category: solicitacaoForm.categoria,
+        estimatedStarCost: solicitacaoForm.custoEstimado,
+        justification: solicitacaoForm.justificativa,
+      })
+      toast({ title: "Solicitação Enviada!", description: "O Super Admin foi notificado." })
+      setSolicitacaoForm({ nome: "", descricao: "", categoria: "Vales", custoEstimado: 0, justificativa: "" })
+      setShowSolicitarDialog(false)
+    } catch (err) {
+      toast({ title: "Erro", description: (err as Error).message, variant: "destructive" })
+    } finally {
+      setSaving(false)
+    }
   }
 
   const exportarHistorico = () => {
-    const csv = LojinhaProfissionalService.exportarAuditoria()
+    const rows = resgatesTime.map(r =>
+      `${r.id},${r.item?.name ?? ""},${r.user?.nome ?? ""},${r.status},${new Date(r.redeemedAt).toLocaleString("pt-BR")}`
+    )
+    const csv = ["ID,Item,Colaborador,Status,Data", ...rows].join("\n")
     const blob = new Blob([csv], { type: "text/csv" })
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
-    a.download = `historico-lojinha-${new Date().toISOString().split("T")[0]}.csv`
+    a.download = `resgates-${new Date().toISOString().split("T")[0]}.csv`
     a.click()
-    toast({
-      title: "Histórico Exportado",
-      description: "O arquivo CSV foi baixado com sucesso.",
-    })
+    toast({ title: "Extrato Exportado", description: "O arquivo CSV foi baixado com sucesso." })
   }
 
   // Renderização condicional por perfil
@@ -758,7 +690,7 @@ function LojinhaProfissionalPanel() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Ativos</p>
-                  <p className="text-2xl font-bold">{itens.filter((i) => i.status === "ativo").length}</p>
+                  <p className="text-2xl font-bold">{itens.filter((i) => i.status === "active").length}</p>
                 </div>
                 <Power className="h-8 w-8 text-green-500" />
               </div>
@@ -768,8 +700,8 @@ function LojinhaProfissionalPanel() {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Em Aprovação</p>
-                  <p className="text-2xl font-bold">{itens.filter((i) => i.status === "em-aprovacao").length}</p>
+                  <p className="text-sm text-muted-foreground">Criados</p>
+                  <p className="text-2xl font-bold">{itens.filter((i) => i.status === "created").length}</p>
                 </div>
                 <Clock className="h-8 w-8 text-amber-500" />
               </div>
@@ -780,7 +712,7 @@ function LojinhaProfissionalPanel() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Rascunhos</p>
-                  <p className="text-2xl font-bold">{itens.filter((i) => i.status === "rascunho").length}</p>
+                  <p className="text-2xl font-bold">{itens.filter((i) => i.status === "draft").length}</p>
                 </div>
                 <FileText className="h-8 w-8 text-muted-foreground" />
               </div>
@@ -796,6 +728,14 @@ function LojinhaProfissionalPanel() {
             <TabsTrigger value="criados">Criados</TabsTrigger>
             <TabsTrigger value="ativos">Ativos/Inativos</TabsTrigger>
             <TabsTrigger value="auditoria">Auditoria</TabsTrigger>
+            <TabsTrigger value="solicitacoes">
+              Solicitações
+              {rewardRequests.filter(r => r.status === "pending").length > 0 && (
+                <Badge className="ml-2 h-5 w-5 p-0 flex items-center justify-center text-xs bg-destructive">
+                  {rewardRequests.filter(r => r.status === "pending").length}
+                </Badge>
+              )}
+            </TabsTrigger>
           </TabsList>
 
           {/* Aba Criar/Editar */}
@@ -821,16 +761,13 @@ function LojinhaProfissionalPanel() {
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Categoria*</label>
                     <select
-                      value={formData.categoria}
-                      onChange={(e) => setFormData({ ...formData, categoria: e.target.value })}
+                      value={formData.categoriaId}
+                      onChange={(e) => setFormData({ ...formData, categoriaId: e.target.value })}
                       className="w-full rounded-lg border border-border bg-background px-3 py-2 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                     >
-                      <option>Vales</option>
-                      <option>Educação</option>
-                      <option>Benefícios</option>
-                      <option>Brindes</option>
-                      <option>Eletrônicos</option>
-                      <option>Acessórios</option>
+                      {categories.map(cat => (
+                        <option key={cat.id} value={cat.id}>{cat.name}</option>
+                      ))}
                     </select>
                   </div>
 
@@ -845,14 +782,14 @@ function LojinhaProfissionalPanel() {
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Custo em Estrelas*</label>
+                    <label className="text-sm font-medium">Custo em Estrelas ⭐</label>
                     <input
                       type="number"
-                      value={formData.custo || ""}
-                      onChange={(e) => setFormData({ ...formData, custo: Number.parseInt(e.target.value) || 0 })}
+                      value={formData.custoEstrelas || ""}
+                      onChange={(e) => setFormData({ ...formData, custoEstrelas: Number.parseInt(e.target.value) || 0 })}
                       className="w-full rounded-lg border border-border bg-background px-3 py-2 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                       placeholder="50"
-                      min="1"
+                      min="0"
                     />
                   </div>
 
@@ -874,7 +811,7 @@ function LojinhaProfissionalPanel() {
                   </div>
 
                   <div className="col-span-2 space-y-2">
-                    <label className="text-sm font-medium">Imagem</label>
+                    <label className="text-sm font-medium">Imagem (JPG, JPEG, PNG, WEBP — máx. 20MB)</label>
                     <div className="space-y-3">
                       {imagePreview ? (
                         <div className="relative">
@@ -898,8 +835,9 @@ function LojinhaProfissionalPanel() {
                             <div className="flex flex-col items-center justify-center pt-5 pb-6">
                               <Gift className="h-8 w-8 text-muted-foreground mb-2" />
                               <p className="text-sm text-muted-foreground">Clique para fazer upload da imagem</p>
+                              <p className="text-xs text-muted-foreground">JPG, PNG, WEBP — até 20MB</p>
                             </div>
-                            <input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} />
+                            <input type="file" className="hidden" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={handleImageUpload} />
                           </label>
                         </div>
                       )}
@@ -914,19 +852,6 @@ function LojinhaProfissionalPanel() {
                       placeholder="Notas internas sobre o item (não visível para colaboradores)"
                       rows={2}
                     />
-                  </div>
-
-                  <div className="col-span-2 flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="requerAprovacao"
-                      checked={formData.requerAprovacaoSuperior}
-                      onChange={(e) => setFormData({ ...formData, requerAprovacaoSuperior: e.target.checked })}
-                      className="rounded border-border"
-                    />
-                    <label htmlFor="requerAprovacao" className="text-sm font-medium cursor-pointer">
-                      Requer Aprovação Superior (Financeiro)
-                    </label>
                   </div>
                 </div>
               </CardContent>
@@ -992,59 +917,49 @@ function LojinhaProfissionalPanel() {
                       <div className="ml-8 space-y-3 p-4 rounded-lg border border-primary/20 bg-primary/5">
                         <label className="text-sm font-medium">Selecionar Gestores*</label>
                         <div className="space-y-2 max-h-64 overflow-y-auto">
-                          {(() => {
-                            const todosUsuarios = JSON.parse(localStorage.getItem("engageai_users") || "[]")
-                            const gestores = todosUsuarios.filter((u: any) => u.role === "gestor")
-                            
-                            if (gestores.length === 0) {
-                              return (
-                                <p className="text-sm text-muted-foreground text-center py-4">
-                                  Nenhum gestor cadastrado no sistema
-                                </p>
-                              )
-                            }
-
-                            return gestores.map((gestor: any) => (
-                              <div
-                                key={gestor.id}
-                                className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors"
-                              >
-                                <input
-                                  type="checkbox"
-                                  id={`gestor-${gestor.id}`}
-                                  checked={formData.gestoresDisponiveis.includes(gestor.id)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setFormData({
-                                        ...formData,
-                                        gestoresDisponiveis: [...formData.gestoresDisponiveis.filter(id => id !== "placeholder"), gestor.id],
-                                      })
-                                    } else {
-                                      const novosGestores = formData.gestoresDisponiveis.filter((id) => id !== gestor.id && id !== "placeholder")
-                                      // Mantém ao menos o placeholder se desmarcar todos
-                                      setFormData({
-                                        ...formData,
-                                        gestoresDisponiveis: novosGestores.length > 0 ? novosGestores : ["placeholder"],
-                                      })
-                                    }
-                                  }}
-                                  className="h-4 w-4 rounded"
-                                />
-                                <label htmlFor={`gestor-${gestor.id}`} className="flex-1 cursor-pointer">
-                                  <p className="text-sm font-medium">{gestor.nome}</p>
-                                  <p className="text-xs text-muted-foreground">{gestor.cargo || "Gestor de Time"}</p>
-                                </label>
-                              </div>
-                            ))
-                          })()}
+                          {gestoresLista.length === 0 ? (
+                            <p className="text-sm text-muted-foreground text-center py-4">
+                              Nenhum gestor cadastrado no sistema
+                            </p>
+                          ) : gestoresLista.map((gestor) => (
+                            <div
+                              key={gestor.id}
+                              className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors"
+                            >
+                              <input
+                                type="checkbox"
+                                id={`gestor-${gestor.id}`}
+                                checked={formData.gestoresDisponiveis.includes(gestor.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setFormData({
+                                      ...formData,
+                                      gestoresDisponiveis: [...formData.gestoresDisponiveis.filter(id => id !== "placeholder"), gestor.id],
+                                    })
+                                  } else {
+                                    const novosGestores = formData.gestoresDisponiveis.filter((id) => id !== gestor.id && id !== "placeholder")
+                                    setFormData({
+                                      ...formData,
+                                      gestoresDisponiveis: novosGestores.length > 0 ? novosGestores : ["placeholder"],
+                                    })
+                                  }
+                                }}
+                                className="h-4 w-4 rounded"
+                              />
+                              <label htmlFor={`gestor-${gestor.id}`} className="flex-1 cursor-pointer">
+                                <p className="text-sm font-medium">{gestor.nome}</p>
+                                <p className="text-xs text-muted-foreground">{gestor.cargo || "Gestor de Time"}</p>
+                              </label>
+                            </div>
+                          ))}
                         </div>
-                        
+
                         {formData.gestoresDisponiveis.filter(id => id !== "placeholder").length === 0 && (
                           <p className="text-xs text-destructive">
                             ⚠️ Selecione ao menos 1 gestor para continuar
                           </p>
                         )}
-                        
+
                         <div className="pt-2 border-t border-border">
                           <p className="text-xs text-muted-foreground">
                             <strong>{formData.gestoresDisponiveis.filter(id => id !== "placeholder").length}</strong> gestor(es) selecionado(s)
@@ -1060,15 +975,15 @@ function LojinhaProfissionalPanel() {
             <Card className="clay-card">
               <CardContent className="pt-6">
                 <div className="flex gap-2">
-                  <Button onClick={() => handleSubmitSuperAdmin(true)} variant="outline">
+                  <Button onClick={() => handleSubmitSuperAdmin(true)} variant="outline" disabled={saving}>
                     <Save className="mr-2 h-4 w-4" />
-                    Salvar como Rascunho
+                    {saving ? "Salvando..." : "Salvar como Rascunho"}
                   </Button>
-                  <Button onClick={() => handleSubmitSuperAdmin(false)} className="clay-button">
+                  <Button onClick={() => handleSubmitSuperAdmin(false)} className="clay-button" disabled={saving}>
                     <Send className="mr-2 h-4 w-4" />
-                    {formData.requerAprovacaoSuperior ? "Enviar para Aprovação" : "Criar Item"}
+                    {saving ? "Criando..." : "Criar Item"}
                   </Button>
-                  {(isCreating || editingItem) && (
+                  {editingItem && (
                     <Button onClick={resetForm} variant="ghost">
                       Cancelar
                     </Button>
@@ -1086,21 +1001,21 @@ function LojinhaProfissionalPanel() {
                 <CardDescription>Itens salvos como rascunho</CardDescription>
               </CardHeader>
               <CardContent>
-                {itens.filter((i) => i.status === "rascunho").length === 0 ? (
+                {itens.filter((i) => i.status === "draft").length === 0 ? (
                   <p className="text-center text-muted-foreground py-8">Nenhum rascunho encontrado</p>
                 ) : (
                   <div className="space-y-3">
                     {itens
-                      .filter((i) => i.status === "rascunho")
+                      .filter((i) => i.status === "draft")
                       .map((item) => (
                         <div
                           key={item.id}
                           className="flex items-center justify-between border border-border rounded-lg p-4"
                         >
                           <div className="flex-1">
-                            <h4 className="font-semibold">{item.nome}</h4>
-                            <p className="text-sm text-muted-foreground">{item.descricao}</p>
-                            <p className="text-sm text-muted-foreground mt-1">⭐ {item.valorPontos} estrelas</p>
+                            <h4 className="font-semibold">{item.name}</h4>
+                            <p className="text-sm text-muted-foreground">{item.description}</p>
+                            <p className="text-sm text-muted-foreground mt-1">⭐ {item.costStars} estrelas</p>
                           </div>
                           <div className="flex gap-2">
                             <Button
@@ -1109,17 +1024,15 @@ function LojinhaProfissionalPanel() {
                               onClick={() => {
                                 setEditingItem(item.id)
                                 setFormData({
-                                  nome: item.nome,
-                                  categoria: item.categoria,
-                                  descricao: item.descricao,
-                                  custo: item.valorPontos,
-                                  quantidade: item.quantidade,
-                                  imagem: item.imagem || "",
-                                  gestoresDisponiveis: item.gestoresPermitidos || [],
-                                  requerAprovacaoSuperior: item.necessitaAprovacaoSuperior,
-                                  observacoesInternas: item.regrasEspecificas || "",
+                                  nome: item.name,
+                                  categoriaId: item.categoryId,
+                                  descricao: item.description,
+                                  custoEstrelas: item.costStars,
+                                  quantidade: item.quantity,
+                                  gestoresDisponiveis: item.managerVisibility?.map(m => m.managerId) || [],
+                                  observacoesInternas: item.internalNotes || "",
                                 })
-                                setImagePreview(item.imagem || null)
+                                setImagePreview(item.imageUrl || null)
                                 setActiveTab("criar")
                               }}
                             >
@@ -1145,50 +1058,47 @@ function LojinhaProfissionalPanel() {
                 <CardDescription>Itens que requerem aprovação do financeiro</CardDescription>
               </CardHeader>
               <CardContent>
-                {itens.filter((i) => i.status === "em-aprovacao").length === 0 ? (
+                {itens.filter((i) => i.status === "created").length === 0 ? (
                   <p className="text-center text-muted-foreground py-8">Nenhum item aguardando aprovação</p>
                 ) : (
                   <div className="space-y-3">
                     {itens
-                      .filter((i) => i.status === "em-aprovacao")
+                      .filter((i) => i.status === "created")
                       .map((item) => (
                         <div key={item.id} className="border border-amber-500/30 rounded-lg p-4 bg-amber-50/50">
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-2">
-                                <h4 className="font-semibold">{item.nome}</h4>
+                                <h4 className="font-semibold">{item.name}</h4>
                                 <Badge variant="outline" className="bg-amber-100">
                                   <Clock className="h-3 w-3 mr-1" />
                                   Aguardando Aprovação
                                 </Badge>
                               </div>
-                              <p className="text-sm text-muted-foreground">{item.descricao}</p>
-                              <p className="text-sm font-medium mt-2">⭐ {item.valorPontos} estrelas</p>
-                              {item.observacoesInternas && (
+                              <p className="text-sm text-muted-foreground">{item.description}</p>
+                              <p className="text-sm font-medium mt-2">⭐ {item.costStars} estrelas</p>
+                              {item.internalNotes && (
                                 <p className="text-xs text-muted-foreground mt-2 italic">
-                                  Obs: {item.observacoesInternas}
+                                  Obs: {item.internalNotes}
                                 </p>
                               )}
                             </div>
                             <div className="flex gap-2">
                               <Button
                                 size="sm"
-                                onClick={() => handleAprovar(item.id)}
+                                onClick={() => handleAtivarItem(item.id)}
                                 className="bg-green-600 hover:bg-green-700"
                               >
                                 <Check className="h-4 w-4 mr-1" />
-                                Aprovar
+                                Ativar
                               </Button>
                               <Button
                                 size="sm"
                                 variant="destructive"
-                                onClick={() => {
-                                  setItemParaAprovar(item)
-                                  setShowAprovacaoDialog(true)
-                                }}
+                                onClick={() => handleDelete(item.id)}
                               >
                                 <XCircle className="h-4 w-4 mr-1" />
-                                Rejeitar
+                                Excluir
                               </Button>
                             </div>
                           </div>
@@ -1208,28 +1118,70 @@ function LojinhaProfissionalPanel() {
                 <CardDescription>Itens aprovados que podem ser ativados para gestores</CardDescription>
               </CardHeader>
               <CardContent>
-                {itens.filter((i) => i.status === "criado").length === 0 ? (
+                {itens.filter((i) => i.status === "created").length === 0 ? (
                   <p className="text-center text-muted-foreground py-8">Nenhum item criado encontrado</p>
                 ) : (
                   <div className="space-y-3">
                     {itens
-                      .filter((i) => i.status === "criado")
+                      .filter((i) => i.status === "created")
                       .map((item) => (
                         <div key={item.id} className="border border-border rounded-lg p-4">
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <h4 className="font-semibold">{item.nome}</h4>
-                              <p className="text-sm text-muted-foreground">{item.descricao}</p>
-                              <p className="text-sm font-medium mt-2">⭐ {item.valorPontos} estrelas</p>
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex items-start gap-4 flex-1">
+                              {item.imageUrl ? (
+                                <img
+                                  src={item.imageUrl}
+                                  alt={item.name}
+                                  className="w-20 h-20 object-cover rounded-lg flex-shrink-0"
+                                />
+                              ) : (
+                                <div className="w-20 h-20 flex items-center justify-center rounded-lg bg-muted flex-shrink-0">
+                                  <Gift className="h-8 w-8 text-muted-foreground" />
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <h4 className="font-semibold">{item.name}</h4>
+                                <p className="text-sm text-muted-foreground line-clamp-2">{item.description}</p>
+                                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                                  <Badge variant="outline">{item.category?.name}</Badge>
+                                  <Badge variant="outline">⭐ {item.costStars}</Badge>
+                                  {item.quantity !== null && (
+                                    <Badge variant="outline">Qtd: {item.quantity}</Badge>
+                                  )}
+                                </div>
+                              </div>
                             </div>
-                            <Button
-                              size="sm"
-                              onClick={() => handleAtivarItem(item.id)}
-                              className="bg-green-600 hover:bg-green-700"
-                            >
-                              <Power className="h-4 w-4 mr-1" />
-                              Ativar Item
-                            </Button>
+                            <div className="flex gap-2 flex-shrink-0">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setEditingItem(item.id)
+                                  setFormData({
+                                    nome: item.name,
+                                    categoriaId: item.categoryId,
+                                    descricao: item.description,
+                                    custoEstrelas: item.costStars,
+                                    quantidade: item.quantity,
+                                    gestoresDisponiveis: item.managerVisibility?.map(m => m.managerId) || [],
+                                    observacoesInternas: item.internalNotes || "",
+                                  })
+                                  setImagePreview(item.imageUrl || null)
+                                  setActiveTab("criar")
+                                }}
+                              >
+                                <Edit className="h-4 w-4 mr-1" />
+                                Editar
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => handleAtivarItem(item.id)}
+                                className="bg-green-600 hover:bg-green-700"
+                              >
+                                <Power className="h-4 w-4 mr-1" />
+                                Ativar Item
+                              </Button>
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -1250,21 +1202,36 @@ function LojinhaProfissionalPanel() {
                 <div className="space-y-6">
                   <div>
                     <h3 className="text-lg font-semibold mb-3 text-green-600">Itens Ativos</h3>
-                    {itens.filter((i) => i.status === "ativo").length === 0 ? (
+                    {itens.filter((i) => i.status === "active").length === 0 ? (
                       <p className="text-muted-foreground">Nenhum item ativo</p>
                     ) : (
                       <div className="space-y-3">
                         {itens
-                          .filter((i) => i.status === "ativo")
+                          .filter((i) => i.status === "active")
                           .map((item) => (
                             <div key={item.id} className="border border-green-500/30 rounded-lg p-4 bg-green-50/50">
-                              <div className="flex items-start justify-between">
-                                <div className="flex-1">
-                                  <h4 className="font-semibold">{item.nome}</h4>
-                                  <p className="text-sm text-muted-foreground">{item.descricao}</p>
-                                  <p className="text-sm font-medium mt-2">⭐ {item.valorPontos} estrelas</p>
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="flex items-start gap-4 flex-1">
+                                  {item.imageUrl ? (
+                                    <img src={item.imageUrl} alt={item.name} className="w-16 h-16 object-cover rounded-lg flex-shrink-0" />
+                                  ) : (
+                                    <div className="w-16 h-16 flex items-center justify-center rounded-lg bg-muted flex-shrink-0">
+                                      <Gift className="h-6 w-6 text-muted-foreground" />
+                                    </div>
+                                  )}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <h4 className="font-semibold">{item.name}</h4>
+                                      <Badge className="bg-green-100 text-green-800">Ativo</Badge>
+                                    </div>
+                                    <p className="text-sm text-muted-foreground mt-1">{item.description}</p>
+                                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                      <Badge variant="outline">{item.category?.name}</Badge>
+                                      <Badge variant="outline">⭐ {item.costStars}</Badge>
+                                    </div>
+                                  </div>
                                 </div>
-                                <Button size="sm" variant="outline" onClick={() => handleDesativarItem(item.id)}>
+                                <Button size="sm" variant="outline" onClick={() => handleDesativarItem(item.id)} className="flex-shrink-0">
                                   <PowerOff className="h-4 w-4 mr-1" />
                                   Desativar
                                 </Button>
@@ -1277,23 +1244,36 @@ function LojinhaProfissionalPanel() {
 
                   <div>
                     <h3 className="text-lg font-semibold mb-3 text-muted-foreground">Itens Inativos</h3>
-                    {itens.filter((i) => i.status === "inativo").length === 0 ? (
+                    {itens.filter((i) => i.status === "inactive").length === 0 ? (
                       <p className="text-muted-foreground">Nenhum item inativo</p>
                     ) : (
                       <div className="space-y-3">
                         {itens
-                          .filter((i) => i.status === "inativo")
+                          .filter((i) => i.status === "inactive")
                           .map((item) => (
                             <div key={item.id} className="border border-border rounded-lg p-4 bg-muted/30">
-                              <div className="flex items-start justify-between">
-                                <div className="flex-1">
-                                  <h4 className="font-semibold text-muted-foreground">{item.nome}</h4>
-                                  <p className="text-sm text-muted-foreground">{item.descricao}</p>
-                                  <p className="text-sm font-medium mt-2 text-muted-foreground">
-                                    ⭐ {item.valorPontos} estrelas
-                                  </p>
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="flex items-start gap-4 flex-1">
+                                  {item.imageUrl ? (
+                                    <img src={item.imageUrl} alt={item.name} className="w-16 h-16 object-cover rounded-lg flex-shrink-0 opacity-60" />
+                                  ) : (
+                                    <div className="w-16 h-16 flex items-center justify-center rounded-lg bg-muted flex-shrink-0">
+                                      <Gift className="h-6 w-6 text-muted-foreground" />
+                                    </div>
+                                  )}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <h4 className="font-semibold text-muted-foreground">{item.name}</h4>
+                                      <Badge variant="secondary">Inativo</Badge>
+                                    </div>
+                                    <p className="text-sm text-muted-foreground mt-1">{item.description}</p>
+                                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                      <Badge variant="outline">{item.category?.name}</Badge>
+                                      <Badge variant="outline">⭐ {item.costStars}</Badge>
+                                    </div>
+                                  </div>
                                 </div>
-                                <Button size="sm" onClick={() => handleAtivarItem(item.id)}>
+                                <Button size="sm" onClick={() => handleAtivarItem(item.id)} className="flex-shrink-0">
                                   <Power className="h-4 w-4 mr-1" />
                                   Reativar
                                 </Button>
@@ -1304,6 +1284,88 @@ function LojinhaProfissionalPanel() {
                     )}
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Aba Solicitações de Recompensa */}
+          <TabsContent value="solicitacoes" className="space-y-4">
+            <Card className="clay-card">
+              <CardHeader>
+                <CardTitle>Solicitações de Recompensa dos Gestores</CardTitle>
+                <CardDescription>Revise e aprove solicitações enviadas pelos gestores</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {rewardRequests.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-8">Nenhuma solicitação encontrada</p>
+                ) : (
+                  <div className="space-y-4">
+                    {rewardRequests.map((req) => (
+                      <div key={req.id} className="border border-border rounded-lg p-4">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <h4 className="font-semibold">{req.name}</h4>
+                              {req.status === "pending" && <Badge className="bg-amber-100 text-amber-800">Pendente</Badge>}
+                              {req.status === "approved" && <Badge className="bg-green-100 text-green-800">Aprovada</Badge>}
+                              {req.status === "rejected" && <Badge variant="destructive">Recusada</Badge>}
+                              {req.status === "converted" && <Badge className="bg-blue-100 text-blue-800">Convertida</Badge>}
+                            </div>
+                            <p className="text-sm text-muted-foreground">{req.description}</p>
+                            <div className="flex items-center gap-3 mt-2 text-sm flex-wrap">
+                              <span className="text-muted-foreground">Gestor: <strong>{req.manager?.nome}</strong></span>
+                              <span className="text-muted-foreground">Categoria: <strong>{req.category}</strong></span>
+                              <span className="text-muted-foreground">Custo estimado: <strong>⭐ {req.estimatedStarCost}</strong></span>
+                            </div>
+                            {req.justification && (
+                              <p className="text-sm mt-2 italic text-muted-foreground">"{req.justification}"</p>
+                            )}
+                            {req.reviewNote && (
+                              <p className="text-sm mt-1 text-primary">Nota de revisão: {req.reviewNote}</p>
+                            )}
+                            <p className="text-xs text-muted-foreground mt-1">{new Date(req.createdAt).toLocaleString("pt-BR")}</p>
+                          </div>
+                          {req.status === "pending" && (
+                            <div className="flex gap-2 flex-shrink-0">
+                              <Button
+                                size="sm"
+                                className="bg-green-600 hover:bg-green-700"
+                                onClick={async () => {
+                                  try {
+                                    await reviewRewardRequest(req.id, { status: "approved" })
+                                    toast({ title: "Solicitação Aprovada", description: `"${req.name}" foi aprovada.` })
+                                    await loadData()
+                                  } catch (err) {
+                                    toast({ title: "Erro", description: (err as Error).message, variant: "destructive" })
+                                  }
+                                }}
+                              >
+                                <Check className="h-4 w-4 mr-1" />
+                                Aprovar
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={async () => {
+                                  try {
+                                    await reviewRewardRequest(req.id, { status: "rejected" })
+                                    toast({ title: "Solicitação Recusada", description: `"${req.name}" foi recusada.` })
+                                    await loadData()
+                                  } catch (err) {
+                                    toast({ title: "Erro", description: (err as Error).message, variant: "destructive" })
+                                  }
+                                }}
+                              >
+                                <XCircle className="h-4 w-4 mr-1" />
+                                Recusar
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -1338,31 +1400,48 @@ function LojinhaProfissionalPanel() {
                 </div>
               </CardHeader>
               <CardContent>
-                {historico.length === 0 ? (
+                {auditLogs.length === 0 ? (
                   <p className="text-center text-muted-foreground py-8">Nenhum registro encontrado</p>
                 ) : (
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Data/Hora</TableHead>
-                        <TableHead>Tipo</TableHead>
+                        <TableHead>Ação</TableHead>
                         <TableHead>Item</TableHead>
                         <TableHead>Usuário</TableHead>
                         <TableHead>Detalhes</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {historico.map((log) => (
-                        <TableRow key={log.id}>
-                          <TableCell className="text-sm">{new Date(log.timestamp).toLocaleString("pt-BR")}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{log.tipo}</Badge>
-                          </TableCell>
-                          <TableCell className="font-medium">{log.itemNome}</TableCell>
-                          <TableCell>{log.usuarioNome}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">{log.detalhes}</TableCell>
-                        </TableRow>
-                      ))}
+                      {auditLogs.map((log) => {
+                        const actionLabels: Record<string, string> = {
+                          item_created: "Criado",
+                          item_updated: "Editado",
+                          item_deleted: "Removido",
+                          item_sent_to_manager: "Enviado a gestores",
+                          item_deactivated: "Desativado",
+                          manager_item_activated: "Ativado pelo gestor",
+                          manager_item_deactivated: "Desativado pelo gestor",
+                          item_redeemed: "Resgatado",
+                          redemption_status_updated: "Status de resgate atualizado",
+                          reward_requested: "Solicitação criada",
+                          reward_request_reviewed: "Solicitação revisada",
+                        }
+                        return (
+                          <TableRow key={log.id}>
+                            <TableCell className="text-sm">{new Date(log.createdAt).toLocaleString("pt-BR")}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline">{actionLabels[log.action] ?? log.action}</Badge>
+                            </TableCell>
+                            <TableCell className="font-medium">{log.item?.name ?? "—"}</TableCell>
+                            <TableCell>{log.performedBy?.nome ?? "—"}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {log.metadata ? JSON.stringify(log.metadata).slice(0, 80) : "—"}
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
                     </TableBody>
                   </Table>
                 )}
@@ -1370,40 +1449,6 @@ function LojinhaProfissionalPanel() {
             </Card>
           </TabsContent>
         </Tabs>
-
-        {/* Dialog de Aprovação */}
-        <Dialog open={showAprovacaoDialog} onOpenChange={setShowAprovacaoDialog}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Revisar Item</DialogTitle>
-              <DialogDescription>Aprovar ou rejeitar o item: {itemParaAprovar?.nome}</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Justificativa/Observações</label>
-                <Textarea
-                  value={justificativaAprovacao}
-                  onChange={(e) => setJustificativaAprovacao(e.target.value)}
-                  placeholder="Adicione uma justificativa para a decisão"
-                  rows={4}
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setShowAprovacaoDialog(false)}>
-                Cancelar
-              </Button>
-              <Button variant="destructive" onClick={() => confirmarAprovacao(false)}>
-                <XCircle className="h-4 w-4 mr-2" />
-                Rejeitar
-              </Button>
-              <Button className="bg-green-600 hover:bg-green-700" onClick={() => confirmarAprovacao(true)}>
-                <CheckCircle2 className="h-4 w-4 mr-2" />
-                Aprovar
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </div>
     )
   }
@@ -1441,51 +1486,89 @@ function LojinhaProfissionalPanel() {
                 <CardDescription>Gerencie a disponibilidade dos itens para seu time</CardDescription>
               </CardHeader>
               <CardContent>
-                {estoque.length === 0 ? (
+                {gestorInventory.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">
                     <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>Nenhum item no estoque</p>
+                    <p>Nenhum item no estoque. Aguarde o Super Admin ativar itens para você.</p>
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {estoque.map((item) => (
-                      <Card key={item.id} className="p-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-4">
-                            {item.imagem && (
-                              <img
-                                src={item.imagem || "/placeholder.svg"}
-                                alt={item.nome}
-                                className="w-16 h-16 object-cover rounded"
-                              />
-                            )}
-                            <div>
-                              <h3 className="font-semibold">{item.nome}</h3>
-                              <p className="text-sm text-muted-foreground">{item.descricao}</p>
-                              <div className="flex items-center gap-2 mt-1">
-                                <Badge>{item.categoria}</Badge>
-                                <Badge variant="outline">⭐ {item.valorPontos}</Badge>
+                    {gestorInventory.map((inv) => {
+                      const item = inv.item
+                      const isAtivoParaTime = inv.status === "active_for_team"
+                      return (
+                        <Card key={inv.id} className="p-4">
+                          <div className="flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-4 flex-1">
+                              {item.imageUrl ? (
+                                <img src={item.imageUrl} alt={item.name} className="w-16 h-16 object-cover rounded flex-shrink-0" />
+                              ) : (
+                                <div className="w-16 h-16 flex items-center justify-center rounded bg-muted flex-shrink-0">
+                                  <Gift className="h-7 w-7 text-muted-foreground" />
+                                </div>
+                              )}
+                              <div>
+                                <h3 className="font-semibold">{item.name}</h3>
+                                <p className="text-sm text-muted-foreground">{item.description}</p>
+                                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                  <Badge>{item.category?.name}</Badge>
+                                  <Badge variant="outline">⭐ {item.costStars}</Badge>
+                                  {isAtivoParaTime ? (
+                                    <Badge className="bg-green-100 text-green-800">Ativo para Time</Badge>
+                                  ) : (
+                                    <Badge variant="secondary">Em Estoque</Badge>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {item.status === "ativo" ? (
-                              <>
-                                <Badge variant="default">Ativo para Time</Badge>
-                                <Button size="sm" variant="outline" onClick={() => handleDesativarParaTime(item.id)}>
-                                  <PowerOff className="h-4 w-4" />
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              {isAtivoParaTime ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={togglingItemId === inv.itemId}
+                                  onClick={async () => {
+                                    setTogglingItemId(inv.itemId)
+                                    try {
+                                      await setManagerInventoryStatus(inv.itemId, "inactive_for_team")
+                                      toast({ title: "Item Desativado", description: "Item removido da lojinha do time." })
+                                      await loadData()
+                                    } catch (err) {
+                                      toast({ title: "Erro", description: (err as Error).message, variant: "destructive" })
+                                    } finally {
+                                      setTogglingItemId(null)
+                                    }
+                                  }}
+                                >
+                                  <PowerOff className="h-4 w-4 mr-1" />
+                                  Desativar
                                 </Button>
-                              </>
-                            ) : (
-                              <Button size="sm" onClick={() => handleAtivarParaTime(item.id)}>
-                                <Power className="mr-2 h-4 w-4" />
-                                Ativar para Time
-                              </Button>
-                            )}
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  disabled={togglingItemId === inv.itemId}
+                                  onClick={async () => {
+                                    setTogglingItemId(inv.itemId)
+                                    try {
+                                      await setManagerInventoryStatus(inv.itemId, "active_for_team")
+                                      toast({ title: "Item Ativado", description: "Item disponibilizado para todo o seu time." })
+                                      await loadData()
+                                    } catch (err) {
+                                      toast({ title: "Erro", description: (err as Error).message, variant: "destructive" })
+                                    } finally {
+                                      setTogglingItemId(null)
+                                    }
+                                  }}
+                                >
+                                  <Power className="mr-2 h-4 w-4" />
+                                  Ativar para Time
+                                </Button>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      </Card>
-                    ))}
+                        </Card>
+                      )
+                    })}
                   </div>
                 )}
               </CardContent>
@@ -1505,7 +1588,9 @@ function LojinhaProfissionalPanel() {
                   <Button
                     variant="outline"
                     onClick={() => {
-                      const csv = LojinhaProfissionalService.exportarExtratoResgates(user?.teamId)
+                      const headers = ["Colaborador","Item","Estrelas","Código","Data"]
+                      const rows = resgatesTime.map(r => [r.user?.nome||"",r.item?.name||"",r.item?.costStars||0,r.id.slice(0,8).toUpperCase(),new Date(r.redeemedAt).toLocaleString("pt-BR")].join(","))
+                      const csv = [headers.join(","), ...rows].join("\n")
                       const blob = new Blob([csv], { type: "text/csv" })
                       const url = window.URL.createObjectURL(blob)
                       const a = document.createElement("a")
@@ -1524,40 +1609,85 @@ function LojinhaProfissionalPanel() {
                 </div>
               </CardHeader>
               <CardContent>
-                {LojinhaProfissionalService.getCuponsByTeam(user?.teamId || "").length === 0 ? (
+                {resgatesTime.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">
                     <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
                     <p>Nenhum resgate realizado ainda</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {LojinhaProfissionalService.getCuponsByTeam(user?.teamId || "")
-                      .sort((a, b) => new Date(b.dataResgate).getTime() - new Date(a.dataResgate).getTime())
+                    {resgatesTime
+                      .slice()
+                      .sort((a, b) => new Date(b.redeemedAt).getTime() - new Date(a.redeemedAt).getTime())
                       .map((cupom) => (
                         <Card key={cupom.id} className="p-4">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-4">
-                              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                          <div className="flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-4 flex-1">
+                              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 flex-shrink-0">
                                 <Gift className="h-6 w-6 text-primary" />
                               </div>
                               <div>
-                                <h4 className="font-semibold">{cupom.itemNome}</h4>
-                                <p className="text-sm text-muted-foreground">Por: {cupom.colaboradorNome}</p>
-                                <div className="flex items-center gap-2 mt-1">
-                                  <Badge variant="outline">{cupom.categoria}</Badge>
-                                  <Badge>⭐ {cupom.pontosUtilizados}</Badge>
+                                <h4 className="font-semibold">{cupom.item?.name}</h4>
+                                <p className="text-sm text-muted-foreground">Por: {cupom.user?.nome}</p>
+                                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                  <Badge variant="outline">{cupom.item?.category?.name}</Badge>
+                                  <Badge variant="outline">⭐ {cupom.item?.costStars}</Badge>
+                                  {cupom.status === "pending" && <Badge className="bg-amber-100 text-amber-800">Pendente</Badge>}
+                                  {cupom.status === "fulfilled" && <Badge className="bg-blue-100 text-blue-800">Entregue</Badge>}
+                                  {cupom.status === "cancelled" && <Badge variant="destructive">Cancelado</Badge>}
                                 </div>
                               </div>
                             </div>
-                            <div className="text-right">
-                              <p className="text-sm font-mono text-muted-foreground">Cupom: {cupom.codigoCupom}</p>
+                            <div className="text-right flex-shrink-0">
+                              <p className="text-sm font-mono text-muted-foreground">Código: {cupom.id.slice(0, 8).toUpperCase()}</p>
                               <p className="text-xs text-muted-foreground mt-1">
-                                {new Date(cupom.dataResgate).toLocaleDateString("pt-BR")} às{" "}
-                                {new Date(cupom.dataResgate).toLocaleTimeString("pt-BR")}
+                                {new Date(cupom.redeemedAt).toLocaleDateString("pt-BR")} às{" "}
+                                {new Date(cupom.redeemedAt).toLocaleTimeString("pt-BR")}
                               </p>
-                              <Badge className="mt-2" variant="default">
-                                Resgatado
-                              </Badge>
+                              {cupom.status === "pending" && (
+                                <div className="flex gap-2 mt-2 justify-end">
+                                  <Button
+                                    size="sm"
+                                    className="bg-blue-600 hover:bg-blue-700"
+                                    disabled={updatingRedemptionId === cupom.id}
+                                    onClick={async () => {
+                                      setUpdatingRedemptionId(cupom.id)
+                                      try {
+                                        await updateRedemptionStatus(cupom.id, "fulfilled")
+                                        setResgatesTime(prev => prev.map(r => r.id === cupom.id ? { ...r, status: "fulfilled" } : r))
+                                        toast({ title: "Resgate Confirmado", description: "Resgate marcado como entregue." })
+                                      } catch (err) {
+                                        toast({ title: "Erro", description: (err as Error).message, variant: "destructive" })
+                                      } finally {
+                                        setUpdatingRedemptionId(null)
+                                      }
+                                    }}
+                                  >
+                                    <Check className="h-4 w-4 mr-1" />
+                                    Entregue
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    disabled={updatingRedemptionId === cupom.id}
+                                    onClick={async () => {
+                                      setUpdatingRedemptionId(cupom.id)
+                                      try {
+                                        await updateRedemptionStatus(cupom.id, "cancelled")
+                                        setResgatesTime(prev => prev.map(r => r.id === cupom.id ? { ...r, status: "cancelled" } : r))
+                                        toast({ title: "Resgate Cancelado", description: "Resgate cancelado com sucesso." })
+                                      } catch (err) {
+                                        toast({ title: "Erro", description: (err as Error).message, variant: "destructive" })
+                                      } finally {
+                                        setUpdatingRedemptionId(null)
+                                      }
+                                    }}
+                                  >
+                                    <XCircle className="h-4 w-4 mr-1" />
+                                    Cancelar
+                                  </Button>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </Card>
@@ -1638,9 +1768,9 @@ function LojinhaProfissionalPanel() {
               <Button variant="outline" onClick={() => setShowSolicitarDialog(false)}>
                 Cancelar
               </Button>
-              <Button onClick={handleSolicitarRecompensa}>
+              <Button onClick={handleSolicitarRecompensa} disabled={saving}>
                 <Send className="mr-2 h-4 w-4" />
-                Enviar Solicitação
+                {saving ? "Enviando..." : "Enviar Solicitação"}
               </Button>
             </DialogFooter>
           </DialogContent>

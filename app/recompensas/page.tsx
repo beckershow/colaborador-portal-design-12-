@@ -2,9 +2,14 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Progress } from "@/components/ui/progress"
 import { useAuth } from "@/lib/auth-context"
-import { LojinhaProfissionalService, type ItemLojinha, type CupomResgate } from "@/lib/lojinha-profissional-service"
+import {
+  getAvailableStoreItems,
+  redeemStoreItem,
+  getMyStoreRedemptions,
+  type StoreItem,
+  type StoreRedemption,
+} from "@/lib/store-api"
 import {
   Dialog,
   DialogContent,
@@ -23,24 +28,12 @@ import {
   Trophy,
   Award,
   Coffee,
-  BookOpen,
   Smartphone,
   ShoppingBag,
   GraduationCap,
   Calendar,
-  Sparkles,
   Settings,
 } from "lucide-react"
-
-const badgesConquistadas = [
-  { nome: "Badge 1", descricao: "Descrição do Badge 1", icone: Gift },
-  { nome: "Badge 2", descricao: "Descrição do Badge 2", icone: Star },
-]
-
-const badgesPendentes = [
-  { nome: "Badge 3", descricao: "Descrição do Badge 3", icone: Trophy, progresso: 50 },
-  { nome: "Badge 4", descricao: "Descrição do Badge 4", icone: Award, progresso: 75 },
-]
 
 const categoryIcons: Record<string, any> = {
   "Vale-Presente": ShoppingBag,
@@ -58,78 +51,70 @@ const categoryIcons: Record<string, any> = {
 export default function RecompensasPage() {
   const { user, hasPermission } = useAuth()
   const router = useRouter()
-  const [saldoEstrelas, setSaldoEstrelas] = useState(150)
+  const [saldoLocal, setSaldoLocal] = useState<number | null>(null)
   const [showToast, setShowToast] = useState(false)
   const [toastMessage, setToastMessage] = useState("")
   const [toastType, setToastType] = useState<"success" | "error">("success")
 
-  const [recompensas, setRecompensas] = useState<ItemLojinha[]>([])
+  const [recompensas, setRecompensas] = useState<StoreItem[]>([])
   const [showCupomDialog, setShowCupomDialog] = useState(false)
-  const [cupomAtual, setCupomAtual] = useState<CupomResgate | null>(null)
-  const [meusResgates, setMeusResgates] = useState<CupomResgate[]>([])
+  const [cupomAtual, setCupomAtual] = useState<StoreRedemption | null>(null)
+  const [meusResgates, setMeusResgates] = useState<StoreRedemption[]>([])
+  const [loading, setLoading] = useState(false)
+
+  const saldoEstrelas = saldoLocal ?? user?.estrelas ?? 0
 
   useEffect(() => {
-    loadRecompensas()
-
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === "engageai-recompensas") {
-        loadRecompensas()
-      }
-    }
-
-    window.addEventListener("storage", handleStorageChange)
-
-    const handleRewardsUpdate = () => {
-      loadRecompensas()
-    }
-
-    window.addEventListener("rewards-updated", handleRewardsUpdate)
-
-    if (user) {
-      const resgates = LojinhaProfissionalService.getCuponsByColaborador(user.id)
-      setMeusResgates(resgates)
-    }
-
-    return () => {
-      window.removeEventListener("storage", handleStorageChange)
-      window.removeEventListener("rewards-updated", handleRewardsUpdate)
-    }
+    if (!user) return
+    setSaldoLocal(user.estrelas ?? 0)
+    loadData()
   }, [user])
 
-  const loadRecompensas = () => {
-    if (!user) return
-    const active = LojinhaProfissionalService.getItensAtivosForColaborador(user.gestorId || "")
-    setRecompensas(active)
+  const loadData = async () => {
+    try {
+      const [itemsRes, resgatesRes] = await Promise.all([
+        getAvailableStoreItems(),
+        getMyStoreRedemptions(),
+      ])
+      setRecompensas(itemsRes.data)
+      setMeusResgates(resgatesRes.data)
+    } catch {
+      // silencioso
+    }
   }
 
-  const handleResgatar = (item: ItemLojinha) => {
+  const handleResgatar = async (item: StoreItem) => {
     if (!user) return
 
-    if (saldoEstrelas >= item.valorPontos) {
-      const result = LojinhaProfissionalService.resgatar(item.id, user.id, user.nome, saldoEstrelas, user.teamId || "")
-
-      if (result.success && result.cupom) {
-        setSaldoEstrelas(saldoEstrelas - item.valorPontos)
-        setCupomAtual(result.cupom)
-        setShowCupomDialog(true)
-        setMeusResgates([...meusResgates, result.cupom])
-        setToastMessage(result.message)
-        setToastType("success")
-        setShowToast(true)
-        loadRecompensas()
-        setTimeout(() => setShowToast(false), 3000)
-      } else {
-        setToastMessage(result.message)
-        setToastType("error")
-        setShowToast(true)
-        setTimeout(() => setShowToast(false), 3000)
-      }
-    } else {
-      const faltam = item.valorPontos - saldoEstrelas
+    if (saldoEstrelas < item.costStars) {
+      const faltam = item.costStars - saldoEstrelas
       setToastMessage(`Você não possui estrelas suficientes. Faltam ${faltam} estrelas para este resgate.`)
       setToastType("error")
       setShowToast(true)
       setTimeout(() => setShowToast(false), 3000)
+      return
+    }
+
+    setLoading(true)
+    try {
+      const res = await redeemStoreItem(item.id)
+      setSaldoLocal(prev => (prev ?? saldoEstrelas) - item.costStars)
+      setCupomAtual(res.data)
+      setShowCupomDialog(true)
+      setMeusResgates(prev => [res.data, ...prev])
+      setToastMessage("Resgate realizado com sucesso!")
+      setToastType("success")
+      setShowToast(true)
+      setTimeout(() => setShowToast(false), 3000)
+      // Recarrega itens pois a quantidade pode ter diminuído
+      getAvailableStoreItems().then(r => setRecompensas(r.data)).catch(() => {})
+    } catch (err) {
+      setToastMessage((err as Error).message || "Erro ao realizar resgate. Tente novamente.")
+      setToastType("error")
+      setShowToast(true)
+      setTimeout(() => setShowToast(false), 4000)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -143,15 +128,14 @@ export default function RecompensasPage() {
 CUPOM DE RESGATE - ENGAGE AI
 ================================
 
-Nome da Recompensa: ${cupomAtual.itemNome}
-Categoria: ${cupomAtual.categoria}
-Código do Cupom: ${cupomAtual.codigoCupom}
+Nome da Recompensa: ${cupomAtual.item.name}
+Categoria: ${cupomAtual.item.category?.name ?? ""}
+Código do Cupom: ${cupomAtual.id.slice(0, 12).toUpperCase()}
 
-Colaborador: ${cupomAtual.colaboradorNome}
-Data e Hora: ${new Date(cupomAtual.dataResgate).toLocaleString("pt-BR")}
-Pontos Utilizados: ${cupomAtual.pontosUtilizados} estrelas
+Colaborador: ${user?.nome ?? ""}
+Data e Hora: ${new Date(cupomAtual.redeemedAt).toLocaleString("pt-BR")}
+Pontos Utilizados: ${cupomAtual.item.costStars} estrelas
 
-Time: ${cupomAtual.timeId}
 Status: Resgatado com Sucesso
 
 ================================
@@ -162,7 +146,7 @@ do resgate realizado.
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
-    a.download = `cupom-${cupomAtual.codigoCupom}.txt`
+    a.download = `cupom-${cupomAtual.id.slice(0, 8)}.txt`
     a.click()
   }
 
@@ -177,36 +161,36 @@ do resgate realizado.
               <Trophy className="h-5 w-5 text-green-600" />
               Resgate Realizado com Sucesso!
             </DialogTitle>
-            <DialogDescription>Seu cupom foi gerado automaticamente</DialogDescription>
+            <DialogDescription>Seu comprovante de resgate foi gerado</DialogDescription>
           </DialogHeader>
 
           {cupomAtual && (
             <div className="space-y-4">
               <div className="rounded-lg border-2 border-green-600 bg-green-50 p-6 text-center">
                 <Gift className="h-12 w-12 mx-auto mb-3 text-green-600" />
-                <h3 className="text-xl font-bold text-foreground">{cupomAtual.itemNome}</h3>
-                <p className="text-sm text-muted-foreground mt-1">{cupomAtual.categoria}</p>
+                <h3 className="text-xl font-bold text-foreground">{cupomAtual.item.name}</h3>
+                <p className="text-sm text-muted-foreground mt-1">{cupomAtual.item.category?.name}</p>
 
                 <div className="mt-4 rounded-md bg-white p-3">
-                  <p className="text-xs text-muted-foreground">Código do Cupom</p>
-                  <p className="text-2xl font-mono font-bold text-foreground">{cupomAtual.codigoCupom}</p>
+                  <p className="text-xs text-muted-foreground">Código do Resgate</p>
+                  <p className="text-xl font-mono font-bold text-foreground">{cupomAtual.id.slice(0, 12).toUpperCase()}</p>
                 </div>
 
                 <div className="mt-4 space-y-2 text-left text-sm">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Colaborador:</span>
-                    <span className="font-medium">{cupomAtual.colaboradorNome}</span>
+                    <span className="font-medium">{user?.nome}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Data/Hora:</span>
                     <span className="font-medium">
-                      {new Date(cupomAtual.dataResgate).toLocaleDateString("pt-BR")} às{" "}
-                      {new Date(cupomAtual.dataResgate).toLocaleTimeString("pt-BR")}
+                      {new Date(cupomAtual.redeemedAt).toLocaleDateString("pt-BR")} às{" "}
+                      {new Date(cupomAtual.redeemedAt).toLocaleTimeString("pt-BR")}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Pontos:</span>
-                    <span className="font-medium">⭐ {cupomAtual.pontosUtilizados}</span>
+                    <span className="font-medium">⭐ {cupomAtual.item.costStars}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Status:</span>
@@ -218,7 +202,7 @@ do resgate realizado.
               </div>
 
               <p className="text-xs text-center text-muted-foreground">
-                Este cupom serve como comprovante interno, validação com RH e controle operacional.
+                Este comprovante serve para validação com RH e controle operacional.
               </p>
             </div>
           )}
@@ -286,8 +270,6 @@ do resgate realizado.
                   Continue engajado para ganhar mais estrelas e desbloquear recompensas exclusivas!
                 </p>
               </div>
-
-              
             </div>
           </div>
         </Card>
@@ -314,9 +296,9 @@ do resgate realizado.
               ) : (
                 <div className="grid grid-cols-2 gap-4">
                   {recompensas.map((item) => {
-                    const Icone = categoryIcons[item.categoria] || Gift
-                    const podeResgatar = saldoEstrelas >= item.valorPontos
-                    const disponivel = item.quantidade === null || item.quantidade > 0
+                    const Icone = categoryIcons[item.category?.name ?? ""] || Gift
+                    const podeResgatar = saldoEstrelas >= item.costStars
+                    const disponivel = item.quantity === null || item.quantity > 0
 
                     return (
                       <div
@@ -324,10 +306,10 @@ do resgate realizado.
                         className="group overflow-hidden rounded-xl border border-border bg-card p-6 transition-all hover:shadow-lg"
                       >
                         <div className="flex flex-col">
-                          {item.imagem ? (
+                          {item.imageUrl ? (
                             <img
-                              src={item.imagem || "/placeholder.svg"}
-                              alt={item.nome}
+                              src={item.imageUrl}
+                              alt={item.name}
                               className="h-16 w-16 rounded-2xl object-cover border-2 border-border"
                             />
                           ) : (
@@ -336,24 +318,24 @@ do resgate realizado.
                             </div>
                           )}
 
-                          <h3 className="mt-4 font-semibold text-foreground">{item.nome}</h3>
-                          <p className="mt-1 text-sm text-muted-foreground">{item.descricao}</p>
+                          <h3 className="mt-4 font-semibold text-foreground">{item.name}</h3>
+                          <p className="mt-1 text-sm text-muted-foreground">{item.description}</p>
 
-                          {item.quantidade !== null && (
+                          {item.quantity !== null && (
                             <p className="mt-2 text-xs text-muted-foreground">
-                              {item.quantidade > 0 ? `${item.quantidade} disponíveis` : "Esgotado"}
+                              {item.quantity > 0 ? `${item.quantity} disponíveis` : "Esgotado"}
                             </p>
                           )}
 
                           <div className="mt-4 flex items-center gap-2">
                             <Star className="h-5 w-5 text-accent" />
-                            <span className="text-xl font-bold text-accent-foreground">{item.valorPontos}</span>
+                            <span className="text-xl font-bold text-accent-foreground">{item.costStars}</span>
                             <span className="text-sm text-muted-foreground">estrelas</span>
                           </div>
 
                           <Button
                             className="mt-4 w-full clay-button"
-                            disabled={!podeResgatar || !disponivel}
+                            disabled={!podeResgatar || !disponivel || loading}
                             variant={podeResgatar && disponivel ? "default" : "outline"}
                             onClick={() => handleResgatar(item)}
                           >
@@ -361,7 +343,7 @@ do resgate realizado.
                               ? "Esgotado"
                               : podeResgatar
                                 ? "Resgatar"
-                                : `Precisa ${item.valorPontos - saldoEstrelas}⭐`}
+                                : `Precisa ${item.costStars - saldoEstrelas}⭐`}
                           </Button>
                         </div>
                       </div>
@@ -374,11 +356,10 @@ do resgate realizado.
         </div>
 
         <div className="space-y-6">
-
           <Card className="clay-card border-0">
             <CardHeader>
               <CardTitle>Meus Resgates</CardTitle>
-              <CardDescription>Histórico de cupons gerados</CardDescription>
+              <CardDescription>Histórico de resgates realizados</CardDescription>
             </CardHeader>
             <CardContent>
               {meusResgates.length === 0 ? (
@@ -389,11 +370,10 @@ do resgate realizado.
               ) : (
                 <div className="space-y-3">
                   {meusResgates
-                    .sort((a, b) => new Date(b.dataResgate).getTime() - new Date(a.dataResgate).getTime())
                     .slice(0, 5)
-                    .map((cupom) => (
+                    .map((resgate) => (
                       <div
-                        key={cupom.id}
+                        key={resgate.id}
                         className="flex items-center justify-between rounded-lg border border-border bg-card p-3"
                       >
                         <div className="flex items-center gap-2">
@@ -401,16 +381,29 @@ do resgate realizado.
                             <Gift className="h-4 w-4 text-green-600" />
                           </div>
                           <div>
-                            <p className="text-sm font-medium text-foreground">{cupom.itemNome}</p>
-                            <p className="text-xs text-muted-foreground font-mono">{cupom.codigoCupom}</p>
+                            <p className="text-sm font-medium text-foreground">{resgate.item.name}</p>
+                            <p className="text-xs text-muted-foreground font-mono">{resgate.id.slice(0, 8).toUpperCase()}</p>
                           </div>
                         </div>
                         <div className="text-right">
                           <p className="text-xs text-muted-foreground">
-                            {new Date(cupom.dataResgate).toLocaleDateString("pt-BR")}
+                            {new Date(resgate.redeemedAt).toLocaleDateString("pt-BR")}
                           </p>
-                          <Badge variant="default" className="mt-1 bg-green-600 text-xs">
-                            Resgatado
+                          <Badge
+                            variant="default"
+                            className={`mt-1 text-xs ${
+                              resgate.status === "fulfilled"
+                                ? "bg-blue-600"
+                                : resgate.status === "cancelled"
+                                  ? "bg-red-600"
+                                  : "bg-green-600"
+                            }`}
+                          >
+                            {resgate.status === "fulfilled"
+                              ? "Entregue"
+                              : resgate.status === "cancelled"
+                                ? "Cancelado"
+                                : "Resgatado"}
                           </Badge>
                         </div>
                       </div>

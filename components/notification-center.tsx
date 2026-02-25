@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { useAuth } from "@/lib/auth-context"
 import {
   Bell, User, Gift, CheckCircle, X, Clock,
-  Heart, MessageCircle, ThumbsUp, AlertCircle,
+  Heart, MessageCircle, ThumbsUp, AlertCircle, ShoppingBag,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import {
@@ -179,6 +179,21 @@ export function NotificationCenter() {
         setIsOpen(false)
         router.push("/recompensas")
         break
+      case "store_item_created":
+      case "store_item_activated":
+      case "store_item_available_to_manager":
+      case "store_item_sent_to_manager":
+      case "store_manager_item_activated":
+      case "store_manager_item_deactivated":
+      case "store_reward_requested":
+      case "store_reward_request_reviewed":
+        setIsOpen(false)
+        router.push("/admin?tab=lojinha")
+        break
+      case "store_item_available_to_team":
+        setIsOpen(false)
+        router.push("/recompensas")
+        break
       case "feedback_received":
       case "feedback_approved":
         setIsOpen(false)
@@ -198,17 +213,26 @@ export function NotificationCenter() {
 
   const getIcon = (type: ApiNotification["type"]) => {
     switch (type) {
-      case "post_pending_approval": return <Clock className="h-5 w-5 text-yellow-500" />
-      case "post_approved":        return <CheckCircle className="h-5 w-5 text-green-500" />
-      case "post_rejected":        return <X className="h-5 w-5 text-destructive" />
-      case "post_liked":           return <Heart className="h-5 w-5 text-rose-500" />
-      case "post_commented":       return <MessageCircle className="h-5 w-5 text-primary" />
-      case "xp_gained":            return <ThumbsUp className="h-5 w-5 text-primary" />
-      case "level_up":             return <AlertCircle className="h-5 w-5 text-accent" />
-      case "reward_redeemed":      return <Gift className="h-5 w-5 text-accent" />
+      case "post_pending_approval":             return <Clock className="h-5 w-5 text-yellow-500" />
+      case "post_approved":                     return <CheckCircle className="h-5 w-5 text-green-500" />
+      case "post_rejected":                     return <X className="h-5 w-5 text-destructive" />
+      case "post_liked":                        return <Heart className="h-5 w-5 text-rose-500" />
+      case "post_commented":                    return <MessageCircle className="h-5 w-5 text-primary" />
+      case "xp_gained":                         return <ThumbsUp className="h-5 w-5 text-primary" />
+      case "level_up":                          return <AlertCircle className="h-5 w-5 text-accent" />
+      case "reward_redeemed":                   return <Gift className="h-5 w-5 text-accent" />
       case "feedback_received":
-      case "feedback_approved":    return <User className="h-5 w-5 text-primary" />
-      default:                     return <Bell className="h-5 w-5 text-muted-foreground" />
+      case "feedback_approved":                 return <User className="h-5 w-5 text-primary" />
+      case "store_item_created":
+      case "store_item_activated":
+      case "store_item_available_to_manager":
+      case "store_item_available_to_team":
+      case "store_item_sent_to_manager":
+      case "store_manager_item_activated":
+      case "store_manager_item_deactivated":
+      case "store_reward_requested":
+      case "store_reward_request_reviewed":     return <ShoppingBag className="h-5 w-5 text-primary" />
+      default:                                  return <Bell className="h-5 w-5 text-muted-foreground" />
     }
   }
 
