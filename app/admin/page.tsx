@@ -421,7 +421,9 @@ function LojinhaProfissionalPanel() {
       setItens(LojinhaProfissionalService.getAllItens())
       setHistorico(LojinhaProfissionalService.getTodosLogs())
     } else if (isGestor && user) {
-      setEstoque(LojinhaProfissionalService.getItensForGestor(user.id))
+      const criados = LojinhaProfissionalService.getItensForGestor(user.id)
+      const ativos = LojinhaProfissionalService.getItensAtivosForGestor(user.id)
+      setEstoque([...ativos, ...criados])
       setSolicitacoesResgate([])
     }
   }
@@ -1098,7 +1100,7 @@ function LojinhaProfissionalPanel() {
                           <div className="flex-1">
                             <h4 className="font-semibold">{item.nome}</h4>
                             <p className="text-sm text-muted-foreground">{item.descricao}</p>
-                            <p className="text-sm text-muted-foreground mt-1">⭐ {item.custo} estrelas</p>
+                            <p className="text-sm text-muted-foreground mt-1">⭐ {item.valorPontos} estrelas</p>
                           </div>
                           <div className="flex gap-2">
                             <Button
@@ -1110,12 +1112,12 @@ function LojinhaProfissionalPanel() {
                                   nome: item.nome,
                                   categoria: item.categoria,
                                   descricao: item.descricao,
-                                  custo: item.custo,
+                                  custo: item.valorPontos,
                                   quantidade: item.quantidade,
                                   imagem: item.imagem || "",
-                                  gestoresDisponiveis: item.gestoresDisponiveis || [],
-                                  requerAprovacaoSuperior: item.requerAprovacaoSuperior,
-                                  observacoesInternas: item.observacoesInternas || "",
+                                  gestoresDisponiveis: item.gestoresPermitidos || [],
+                                  requerAprovacaoSuperior: item.necessitaAprovacaoSuperior,
+                                  observacoesInternas: item.regrasEspecificas || "",
                                 })
                                 setImagePreview(item.imagem || null)
                                 setActiveTab("criar")
@@ -1161,7 +1163,7 @@ function LojinhaProfissionalPanel() {
                                 </Badge>
                               </div>
                               <p className="text-sm text-muted-foreground">{item.descricao}</p>
-                              <p className="text-sm font-medium mt-2">⭐ {item.custo} estrelas</p>
+                              <p className="text-sm font-medium mt-2">⭐ {item.valorPontos} estrelas</p>
                               {item.observacoesInternas && (
                                 <p className="text-xs text-muted-foreground mt-2 italic">
                                   Obs: {item.observacoesInternas}
@@ -1218,7 +1220,7 @@ function LojinhaProfissionalPanel() {
                             <div className="flex-1">
                               <h4 className="font-semibold">{item.nome}</h4>
                               <p className="text-sm text-muted-foreground">{item.descricao}</p>
-                              <p className="text-sm font-medium mt-2">⭐ {item.custo} estrelas</p>
+                              <p className="text-sm font-medium mt-2">⭐ {item.valorPontos} estrelas</p>
                             </div>
                             <Button
                               size="sm"
@@ -1260,7 +1262,7 @@ function LojinhaProfissionalPanel() {
                                 <div className="flex-1">
                                   <h4 className="font-semibold">{item.nome}</h4>
                                   <p className="text-sm text-muted-foreground">{item.descricao}</p>
-                                  <p className="text-sm font-medium mt-2">⭐ {item.custo} estrelas</p>
+                                  <p className="text-sm font-medium mt-2">⭐ {item.valorPontos} estrelas</p>
                                 </div>
                                 <Button size="sm" variant="outline" onClick={() => handleDesativarItem(item.id)}>
                                   <PowerOff className="h-4 w-4 mr-1" />
@@ -1288,7 +1290,7 @@ function LojinhaProfissionalPanel() {
                                   <h4 className="font-semibold text-muted-foreground">{item.nome}</h4>
                                   <p className="text-sm text-muted-foreground">{item.descricao}</p>
                                   <p className="text-sm font-medium mt-2 text-muted-foreground">
-                                    ⭐ {item.custo} estrelas
+                                    ⭐ {item.valorPontos} estrelas
                                   </p>
                                 </div>
                                 <Button size="sm" onClick={() => handleAtivarItem(item.id)}>
@@ -1462,12 +1464,12 @@ function LojinhaProfissionalPanel() {
                               <p className="text-sm text-muted-foreground">{item.descricao}</p>
                               <div className="flex items-center gap-2 mt-1">
                                 <Badge>{item.categoria}</Badge>
-                                <Badge variant="outline">⭐ {item.custo}</Badge>
+                                <Badge variant="outline">⭐ {item.valorPontos}</Badge>
                               </div>
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            {item.ativadoParaTime ? (
+                            {item.status === "ativo" ? (
                               <>
                                 <Badge variant="default">Ativo para Time</Badge>
                                 <Button size="sm" variant="outline" onClick={() => handleDesativarParaTime(item.id)}>
@@ -3038,12 +3040,10 @@ function AdminPageContent() {
               <Heart className="h-4 w-4" />
               Humor do Dia
             </TabsTrigger>
-            {/*
             <TabsTrigger value="feedbacks">
               <MessageSquare className="h-4 w-4" />
               Feedbacks
             </TabsTrigger>
-            */}
             <TabsTrigger value="feed-social">
               <Users className="h-4 w-4" />
               Feed Social
@@ -3076,7 +3076,6 @@ function AdminPageContent() {
                     color: "bg-accent/10 border-accent",
                     href: "/gestor/criar-missao-do-dia",
                   },
-                  /*
                   {
                     title: "Criar Pesquisa",
                     description: "Pulse surveys e questionários",
@@ -3084,7 +3083,6 @@ function AdminPageContent() {
                     color: "bg-chart-1/10 border-chart-1",
                     href: "/pesquisas/criar",
                   },
-                  */
                   {
                     title: "Criar Treinamento",
                     description: "Cursos e trilhas de aprendizado",
@@ -3178,13 +3176,11 @@ function AdminPageContent() {
                       icon: Heart,
                     },
                     { title: "Desafio no Feed", description: "Estimule publicações e interação social", icon: Users },
-                    /*
                     {
                       title: "Campanha de Feedback",
                       description: "Incentive reconhecimento entre colaboradores",
                       icon: MessageSquare,
                     },
-                    */
                   ].map((type) => (
                     <div
                       key={type.title}
@@ -3218,11 +3214,9 @@ function AdminPageContent() {
             <HumorDoDiaPanel />
           </TabsContent>
 
-          {/*
           <TabsContent value="feedbacks" className="space-y-4">
             <FeedbackConfigPanel />
           </TabsContent>
-          */}
 
           <TabsContent value="feed-social" className="space-y-4">
             <FeedSocialConfigPanel />

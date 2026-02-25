@@ -30,7 +30,23 @@ export interface Notification {
   priority?: "low" | "medium" | "high"
 }
 
-// Sistema de notificações em memória (não persistido)
+// Notificação para o colaborador sobre o resultado da publicação
+export interface CollabFeedNotification {
+  id: string
+  userId: string
+  type: "post_approved" | "post_rejected" | "post_liked" | "post_commented"
+  title: string
+  message: string
+  postId?: string
+  read: boolean
+  createdAt: string
+}
+
+// Keys de persistência
+const PENDING_POST_NOTIFS_KEY = "engageai-pending-post-notifications"
+const COLLAB_FEED_NOTIFS_KEY = "engageai-collab-feed-notifications"
+
+// Sistema de notificações em memória (para gestores/admins)
 let notifications: Notification[] = []
 let listeners: Array<(notifications: Notification[]) => void> = []
 
@@ -94,8 +110,115 @@ export class NotificationService {
 
   static removeNotification(id: string) {
     notifications = notifications.filter((n) => n.id !== id)
+    // Remover também da persistência (para que não reapareça após reload)
+    if (typeof window !== "undefined") {
+      try {
+        const stored: Notification[] = JSON.parse(localStorage.getItem(PENDING_POST_NOTIFS_KEY) || "[]")
+        localStorage.setItem(
+          PENDING_POST_NOTIFS_KEY,
+          JSON.stringify(stored.filter((n) => n.id !== id)),
+        )
+      } catch {
+        // ignore
+      }
+    }
     this.notifyListeners()
   }
+
+  // ─── Persistência para gestores (post_pending_approval) ───────────────────
+
+  /**
+   * Carrega notificações de posts pendentes do localStorage para o estado em memória.
+   * Deve ser chamado pelo NotificationCenter no mount para que gestores vejam
+   * as notificações mesmo após reload da página.
+   */
+  static loadPersistedPendingPostNotifications() {
+    if (typeof window === "undefined") return
+    try {
+      const stored: Notification[] = JSON.parse(localStorage.getItem(PENDING_POST_NOTIFS_KEY) || "[]")
+      const existingIds = new Set(notifications.map((n) => n.id))
+      stored.forEach((n) => {
+        if (!existingIds.has(n.id)) {
+          notifications.push(n)
+        }
+      })
+      this.notifyListeners()
+    } catch {
+      // ignore
+    }
+  }
+
+  // ─── Store de notificações para colaboradores (feed) ──────────────────────
+
+  /**
+   * Escreve uma notificação de resultado de publicação para o colaborador.
+   * Chamado pelo gestor ao aprovar ou rejeitar um post.
+   */
+  static writeCollabFeedNotification(
+    userId: string,
+    type: CollabFeedNotification["type"],
+    title: string,
+    message: string,
+    postId?: string,
+  ) {
+    if (typeof window === "undefined") return
+    try {
+      const stored: CollabFeedNotification[] = JSON.parse(localStorage.getItem(COLLAB_FEED_NOTIFS_KEY) || "[]")
+      const notif: CollabFeedNotification = {
+        id: `collab-${Date.now()}-${Math.random()}`,
+        userId,
+        type,
+        title,
+        message,
+        postId,
+        read: false,
+        createdAt: new Date().toISOString(),
+      }
+      stored.unshift(notif)
+      // Manter no máximo 100 registros
+      localStorage.setItem(COLLAB_FEED_NOTIFS_KEY, JSON.stringify(stored.slice(0, 100)))
+    } catch {
+      // ignore
+    }
+  }
+
+  static getCollabFeedNotifications(userId: string): CollabFeedNotification[] {
+    if (typeof window === "undefined") return []
+    try {
+      const stored: CollabFeedNotification[] = JSON.parse(localStorage.getItem(COLLAB_FEED_NOTIFS_KEY) || "[]")
+      return stored.filter((n) => n.userId === userId)
+    } catch {
+      return []
+    }
+  }
+
+  static markCollabFeedNotificationRead(id: string) {
+    if (typeof window === "undefined") return
+    try {
+      const stored: CollabFeedNotification[] = JSON.parse(localStorage.getItem(COLLAB_FEED_NOTIFS_KEY) || "[]")
+      localStorage.setItem(
+        COLLAB_FEED_NOTIFS_KEY,
+        JSON.stringify(stored.map((n) => (n.id === id ? { ...n, read: true } : n))),
+      )
+    } catch {
+      // ignore
+    }
+  }
+
+  static markAllCollabFeedNotificationsRead(userId: string) {
+    if (typeof window === "undefined") return
+    try {
+      const stored: CollabFeedNotification[] = JSON.parse(localStorage.getItem(COLLAB_FEED_NOTIFS_KEY) || "[]")
+      localStorage.setItem(
+        COLLAB_FEED_NOTIFS_KEY,
+        JSON.stringify(stored.map((n) => (n.userId === userId ? { ...n, read: true } : n))),
+      )
+    } catch {
+      // ignore
+    }
+  }
+
+  // ─── Métodos de notificação ───────────────────────────────────────────────
 
   static notifyProfileChangeRequest(userId: string, userName: string, changes: Record<string, string>) {
     this.addNotification(
@@ -185,16 +308,38 @@ export class NotificationService {
     )
   }
 
-  static notifyPostPendingApproval(userId: string, userName: string, post: { content: string; hasImage: boolean }) {
-    this.addNotification(
-      {
-        type: "post_pending_approval",
-        userId,
-        userName,
-        data: { post },
-      },
-      "medium",
-    )
+  static notifyPostPendingApproval(
+    userId: string,
+    userName: string,
+    post: { content: string; hasImage: boolean; hasVideo?: boolean; id?: string },
+  ) {
+    // Criar a notificação em memória
+    const newNotification: Notification = {
+      id: `notif-${Date.now()}-${Math.random()}`,
+      type: "post_pending_approval",
+      userId,
+      userName,
+      timestamp: new Date().toISOString(),
+      read: false,
+      priority: "medium",
+      data: { post },
+    }
+
+    notifications.unshift(newNotification)
+    this.notifyListeners()
+
+    // Persistir no localStorage para sobreviver a reloads do gestor
+    if (typeof window !== "undefined") {
+      try {
+        const stored: Notification[] = JSON.parse(localStorage.getItem(PENDING_POST_NOTIFS_KEY) || "[]")
+        stored.unshift(newNotification)
+        localStorage.setItem(PENDING_POST_NOTIFS_KEY, JSON.stringify(stored.slice(0, 50)))
+      } catch {
+        // ignore
+      }
+    }
+
+    console.log("[v0] Nova notificação adicionada:", newNotification)
   }
 
   static notifyPostApproved(userId: string, userName: string) {

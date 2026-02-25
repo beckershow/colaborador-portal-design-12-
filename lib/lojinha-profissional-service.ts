@@ -100,6 +100,14 @@ export class LojinhaProfissionalService {
     )
   }
 
+  static getItensAtivosForGestor(gestorId: string): ItemLojinha[] {
+    return this.getAllItens().filter(
+      (item) =>
+        item.status === "ativo" &&
+        (item.gestoresPermitidos.includes(gestorId) || item.gestoresPermitidos.length === 0),
+    )
+  }
+
   static getItensAtivosForColaborador(gestorId: string): ItemLojinha[] {
     return this.getAllItens().filter(
       (item) =>

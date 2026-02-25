@@ -714,24 +714,6 @@ export default function HomePage() {
                     </Link>
                   </div>
 
-                  {/* Conquistas */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-3">
-                      <Award className="h-4 w-4 text-primary" />
-                      <h4 className="text-sm font-semibold">Conquistas Recentes</h4>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-sm">
-                        <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center">
-                          🏆
-                        </div>
-                        <div>
-                          <p className="font-medium text-foreground">Primeira Campanha</p>
-                          <p className="text-xs text-muted-foreground">Há 2 dias</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
                 </CardContent>
               </Card>
             </div>

@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { UserRoleBadge } from "@/components/user-role-badge"
 import { NotificationCenter } from "@/components/notification-center"
+import { CollaboratorNotificationBell } from "@/components/collaborator-notification-bell"
 import { useAuth } from "@/lib/auth-context"
 import { GamificationGuard } from "@/lib/gamification-guard"
 import { useState } from "react"
@@ -72,7 +73,7 @@ export function EngageSidebar({
   // TASK 2: Módulos do Colaborador - agrupados em categoria colapsável (sem Feed Social)
   const modulosColaborador = [
     { name: "Humor do Dia", href: "/humor", icon: Heart },
-    // { name: "Feedbacks", href: "/feedbacks", icon: MessageSquare },
+    { name: "Feedbacks", href: "/feedbacks", icon: MessageSquare },
     { name: "Pesquisas", href: "/pesquisas", icon: ClipboardList },
     { name: "Treinamentos", href: "/treinamentos", icon: GraduationCap },
     { name: "Eventos", href: "/eventos", icon: Calendar }, // TASK 1: Novo item
@@ -136,7 +137,10 @@ export function EngageSidebar({
               <div className="flex-1">
                 <div className="flex items-center justify-between">
                   <p className="font-semibold text-sidebar-foreground">{user.nome}</p>
-                  <NotificationCenter />
+                  {/* Gestores/admins — notificações internas (aprovações) */}
+                  {hasPermission(["gestor", "super-admin"]) && <NotificationCenter />}
+                  {/* Colaboradores — notificações do backend */}
+                  {user?.role === "colaborador" && <CollaboratorNotificationBell />}
                 </div>
                 <div className="mt-1.5">
                   <UserRoleBadge role={user.role} size="sm" />

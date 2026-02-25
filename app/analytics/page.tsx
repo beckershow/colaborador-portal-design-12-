@@ -2804,10 +2804,8 @@ function AnalyticsPageContent() {
             <TabsTrigger value="campanhas">Campanhas</TabsTrigger>
             <TabsTrigger value="feed-social">Feed Social</TabsTrigger>
             <TabsTrigger value="humor">Humor</TabsTrigger>
-            {/*
             <TabsTrigger value="feedbacks">Feedbacks</TabsTrigger>
             <TabsTrigger value="pesquisas">Pesquisas</TabsTrigger>
-            */}
             <TabsTrigger value="treinamentos">Treinamentos</TabsTrigger>
             <TabsTrigger value="recompensas">Recompensas</TabsTrigger>
           </TabsList>
@@ -3265,7 +3263,6 @@ function AnalyticsPageContent() {
             <HumorAnalytics user={user} />
           </TabsContent>
 
-          {/*
           <TabsContent value="feedbacks" className="space-y-6">
             <Tabs defaultValue="analytics" className="w-full">
               <TabsList className="grid w-full grid-cols-2 mb-6">
@@ -3282,13 +3279,10 @@ function AnalyticsPageContent() {
               </TabsContent>
             </Tabs>
           </TabsContent>
-          */}
 
-          {/*
           <TabsContent value="pesquisas" className="space-y-6">
             <SurveyAnalytics user={user} />
           </TabsContent>
-          */}
 
           <TabsContent value="recompensas">
             <Suspense

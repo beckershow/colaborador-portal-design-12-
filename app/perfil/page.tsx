@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import {
   Dialog,
   DialogContent as DialogContentComponent,
@@ -18,13 +18,30 @@ import { Progress } from "@/components/ui/progress"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { useAuth } from "@/lib/auth-context"
 import { NotificationService } from "@/lib/notification-service"
 import { useToast } from "@/hooks/use-toast"
 import { apiFetch } from "@/lib/api-client"
-import { Award, Trophy, Star, Calendar, Camera, Edit, Bell, CheckCircle } from "lucide-react"
+import { Trophy, Camera, Edit, Bell, CheckCircle, Smile, Send, MessageSquare, ClipboardList, BookOpen, Gift, ArrowRight } from "lucide-react"
+import Link from "next/link"
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  ResponsiveContainer,
+} from "recharts"
 
 interface ProfileStats {
+  moodEntries: number
+  feedbacksSent: number
+  feedbacksReceived: number
+  surveyResponses: number
+  trainingCompletions: number
+  rewardRedemptions: number
   trilhasCompletadas: number
   modulosFinalizados: number
   diasEngajamento: number
@@ -46,6 +63,15 @@ interface NotifPrefs {
   feedbacks: boolean
 }
 
+type XpPeriod = "1m" | "3m" | "6m" | "1y"
+
+const PERIOD_LABELS: Record<XpPeriod, string> = {
+  "1m": "1 mês",
+  "3m": "3 meses",
+  "6m": "6 meses",
+  "1y": "1 ano",
+}
+
 const PerfilPage = () => {
   const { user, setUser } = useAuth()
   const { toast } = useToast()
@@ -63,6 +89,8 @@ const PerfilPage = () => {
 
   const [stats, setStats] = useState<ProfileStats | null>(null)
   const [xpHistory, setXpHistory] = useState<XpHistoryEntry[]>([])
+  const [xpPeriod, setXpPeriod] = useState<XpPeriod>("6m")
+  const [loadingXp, setLoadingXp] = useState(false)
   const [notifPrefs, setNotifPrefs] = useState<NotifPrefs | null>(null)
   const [loadingStats, setLoadingStats] = useState(true)
 
@@ -101,18 +129,16 @@ const PerfilPage = () => {
     }
   }, [user])
 
-  // Fetch real stats, xp history and notification preferences
+  // Fetch stats and notification preferences
   useEffect(() => {
     if (!user) return
     setLoadingStats(true)
     Promise.all([
       apiFetch<{ data: ProfileStats }>(`/users/${user.id}/stats`),
-      apiFetch<{ data: XpHistoryEntry[] }>(`/users/${user.id}/xp-history`),
       apiFetch<{ data: NotifPrefs }>(`/users/${user.id}/notification-preferences`),
     ])
-      .then(([statsRes, xpRes, prefRes]) => {
+      .then(([statsRes, prefRes]) => {
         setStats(statsRes.data)
-        setXpHistory(xpRes.data)
         setNotifPrefs(prefRes.data)
         setNotificationSettings(prefRes.data)
       })
@@ -121,6 +147,24 @@ const PerfilPage = () => {
       })
       .finally(() => setLoadingStats(false))
   }, [user])
+
+  // Fetch XP history when period changes
+  const fetchXpHistory = useCallback(async (period: XpPeriod) => {
+    if (!user) return
+    setLoadingXp(true)
+    try {
+      const res = await apiFetch<{ data: XpHistoryEntry[] }>(`/users/${user.id}/xp-history?period=${period}`)
+      setXpHistory(res.data)
+    } catch {
+      // silently fail
+    } finally {
+      setLoadingXp(false)
+    }
+  }, [user])
+
+  useEffect(() => {
+    fetchXpHistory(xpPeriod)
+  }, [fetchXpHistory, xpPeriod])
 
   const handleEditMode = () => {
     setEditMode(!editMode)
@@ -297,7 +341,14 @@ const PerfilPage = () => {
     xpProximo: user.xpProximo || 0,
   }
 
-  const maxXp = xpHistory.length > 0 ? Math.max(...xpHistory.map((h) => h.xp), 1) : 1
+  const interacoes = [
+    { label: "Humores Registrados", valor: loadingStats ? "—" : (stats?.moodEntries ?? 0), icone: Smile },
+    { label: "Feedbacks Enviados", valor: loadingStats ? "—" : (stats?.feedbacksSent ?? 0), icone: Send },
+    { label: "Feedbacks Recebidos", valor: loadingStats ? "—" : (stats?.feedbacksReceived ?? 0), icone: MessageSquare },
+    { label: "Pesquisas Respondidas", valor: loadingStats ? "—" : (stats?.surveyResponses ?? 0), icone: ClipboardList },
+    { label: "Treinamentos Concluídos", valor: loadingStats ? "—" : (stats?.trainingCompletions ?? 0), icone: BookOpen },
+    { label: "Recompensas Resgatadas", valor: loadingStats ? "—" : (stats?.rewardRedemptions ?? 0), icone: Gift },
+  ]
 
   return (
     <div className="container mx-auto max-w-7xl space-y-8">
@@ -308,30 +359,37 @@ const PerfilPage = () => {
 
       <div className="grid grid-cols-3 gap-6">
         <div className="col-span-2 space-y-6">
+          {/* ── Informações Pessoais ── */}
           <Card className="clay-card border-0">
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle>Informações Pessoais</CardTitle>
-                  {!canEditDirectly && (
-                    <CardDescription className="mt-2 text-accent">
-                      💡 Para alterar seus dados, solicite aprovação do seu gestor
-                    </CardDescription>
-                  )}
-                  {canEditDirectly && <CardDescription>Seus dados cadastrais</CardDescription>}
+                  <CardDescription>Seus dados cadastrais</CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge role={user.role} size="md" />
-                  <Button variant="outline" size="sm" className="clay-button bg-transparent" onClick={handleEditMode}>
-                    <Edit className="mr-2 h-4 w-4" />
-                    {canEditDirectly ? "Editar" : "Solicitar Alteração"}
-                  </Button>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="outline" size="sm" className="clay-button bg-transparent" onClick={handleEditMode}>
+                          <Edit className="mr-2 h-4 w-4" />
+                          {canEditDirectly ? "Editar" : "Solicitar Alteração"}
+                        </Button>
+                      </TooltipTrigger>
+                      {!canEditDirectly && (
+                        <TooltipContent side="left" className="max-w-xs text-center">
+                          <p>Suas alterações serão enviadas ao gestor para aprovação. Após aprovadas, os dados serão atualizados.</p>
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
               </div>
             </CardHeader>
             <CardContent>
               <div className="flex gap-8">
-                <div className="relative">
+                <div className="relative self-start">
                   <Avatar className="h-32 w-32 border-4 border-primary">
                     <AvatarImage src={avatarPreview || user.avatar || "/placeholder.svg"} />
                     <AvatarFallback className="bg-primary text-3xl text-primary-foreground">
@@ -347,16 +405,13 @@ const PerfilPage = () => {
                     accept="image/*"
                     className="hidden"
                     onChange={handleAvatarUpload}
-                    disabled={!canEditDirectly}
                   />
                   <Button
                     size="icon"
-                    className="absolute -bottom-2 -right-2 h-10 w-10 rounded-full shadow-lg"
-                    disabled={!canEditDirectly}
-                    title={!canEditDirectly ? "Solicite aprovação do gestor para alterar" : "Alterar avatar"}
+                    className="absolute -bottom-2 left-1/2 -translate-x-1/2 h-8 w-8 rounded-full shadow-lg"
                     onClick={() => document.getElementById("avatar-upload")?.click()}
                   >
-                    <Camera className="h-5 w-5" />
+                    <Camera className="h-4 w-4" />
                   </Button>
                 </div>
 
@@ -450,9 +505,7 @@ const PerfilPage = () => {
                           </Button>
                           <Button
                             variant="outline"
-                            onClick={() => {
-                              setEditMode(false)
-                            }}
+                            onClick={() => setEditMode(false)}
                             className="clay-button bg-transparent"
                           >
                             Cancelar
@@ -465,9 +518,7 @@ const PerfilPage = () => {
                           </Button>
                           <Button
                             variant="outline"
-                            onClick={() => {
-                              setEditMode(false)
-                            }}
+                            onClick={() => setEditMode(false)}
                             className="clay-button bg-transparent"
                           >
                             Cancelar
@@ -481,27 +532,33 @@ const PerfilPage = () => {
             </CardContent>
           </Card>
 
+          {/* ── Histórico de Interações ── */}
           <Card className="clay-card border-0">
             <CardHeader>
-              <CardTitle>Estatísticas de Engajamento</CardTitle>
-              <CardDescription>Seu desempenho na plataforma</CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Histórico de Interações</CardTitle>
+                  <CardDescription>Suas atividades na plataforma</CardDescription>
+                </div>
+                <Link href="/historico-interacoes">
+                  <Button variant="outline" size="sm" className="clay-button bg-transparent">
+                    Ver histórico completo
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </Link>
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-4 gap-4">
-                {[
-                  { label: "Trilhas Completadas", valor: loadingStats ? "—" : (stats?.trilhasCompletadas ?? 0), icone: Trophy },
-                  { label: "Módulos Finalizados", valor: loadingStats ? "—" : (stats?.modulosFinalizados ?? 0), icone: Award },
-                  { label: "Dias de Engajamento", valor: loadingStats ? "—" : (stats?.diasEngajamento ?? 0), icone: Calendar },
-                  { label: "Estrelas Ganhas", valor: user.estrelas, icone: Star },
-                ].map((stat, index) => {
-                  const Icone = stat.icone
+              <div className="grid grid-cols-3 gap-4">
+                {interacoes.map((item, index) => {
+                  const Icone = item.icone
                   return (
-                    <div key={index} className="rounded-xl border border-border bg-card p-6 text-center">
-                      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/20">
-                        <Icone className="h-6 w-6 text-primary" />
+                    <div key={index} className="rounded-xl border border-border bg-card p-5 text-center">
+                      <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-primary/20">
+                        <Icone className="h-5 w-5 text-primary" />
                       </div>
-                      <p className="mt-4 text-3xl font-bold text-foreground">{stat.valor}</p>
-                      <p className="mt-1 text-sm text-muted-foreground">{stat.label}</p>
+                      <p className="mt-3 text-2xl font-bold text-foreground">{item.valor}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{item.label}</p>
                     </div>
                   )
                 })}
@@ -509,31 +566,62 @@ const PerfilPage = () => {
             </CardContent>
           </Card>
 
+          {/* ── Histórico de XP ── */}
           <Card className="clay-card border-0">
             <CardHeader>
-              <CardTitle>Histórico de XP</CardTitle>
-              <CardDescription>Sua evolução nos últimos 6 meses</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {loadingStats ? (
-                <p className="text-sm text-muted-foreground">Carregando...</p>
-              ) : xpHistory.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Nenhum XP registrado nos últimos 6 meses.</p>
-              ) : (
-                <div className="space-y-4">
-                  {xpHistory.map((item, index) => (
-                    <div key={index} className="flex items-center gap-4">
-                      <span className="w-12 text-sm font-medium capitalize text-muted-foreground">{item.label}</span>
-                      <div className="flex-1">
-                        <Progress value={(item.xp / maxXp) * 100} className="h-3" />
-                      </div>
-                      <span className="w-16 text-right text-sm font-semibold text-primary">{item.xp} XP</span>
-                    </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Histórico de XP</CardTitle>
+                  <CardDescription>Seus ganhos de XP por período</CardDescription>
+                </div>
+                <div className="flex items-center gap-1 rounded-lg border border-border bg-muted/30 p-1">
+                  {(["1m", "3m", "6m", "1y"] as XpPeriod[]).map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => setXpPeriod(p)}
+                      className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                        xpPeriod === p
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {PERIOD_LABELS[p]}
+                    </button>
                   ))}
                 </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {loadingXp ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">Carregando...</p>
+              ) : xpHistory.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  Nenhum XP registrado nesse período.
+                </p>
+              ) : (
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={xpHistory} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fontSize: 12 }}
+                      className="fill-muted-foreground"
+                    />
+                    <YAxis tick={{ fontSize: 12 }} className="fill-muted-foreground" />
+                    <RechartsTooltip
+                      formatter={(value: number) => [`${value} XP`, "Ganhos"]}
+                      contentStyle={{
+                        background: "hsl(var(--card))",
+                        border: "1px solid hsl(var(--border))",
+                        borderRadius: "8px",
+                      }}
+                    />
+                    <Bar dataKey="xp" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
               )}
 
-              <div className="mt-6 rounded-lg bg-gradient-to-br from-primary/10 to-chart-1/10 p-4">
+              <div className="mt-4 rounded-lg bg-gradient-to-br from-primary/10 to-chart-1/10 p-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-muted-foreground">Total de XP Acumulado</p>
@@ -546,7 +634,9 @@ const PerfilPage = () => {
           </Card>
         </div>
 
+        {/* ── Coluna direita ── */}
         <div className="space-y-6">
+          {/* Card de Nível */}
           <Card className="clay-card border-0">
             <div className="bg-gradient-to-br from-primary/10 via-chart-1/10 to-chart-3/10 p-6">
               <div className="text-center">
@@ -554,7 +644,6 @@ const PerfilPage = () => {
                   <Trophy className="mr-1 h-3 w-3" />
                   Nível {perfil.nivel}
                 </Badge>
-                <h3 className="mt-4 text-2xl font-bold text-foreground">Explorador</h3>
 
                 <div className="mt-6 space-y-2">
                   <div className="flex items-center justify-between text-sm">
@@ -572,6 +661,7 @@ const PerfilPage = () => {
             </div>
           </Card>
 
+          {/* Preferências de Notificação */}
           <Card className="clay-card border-0">
             <CardHeader>
               <CardTitle>Preferências de Notificação</CardTitle>
@@ -594,6 +684,7 @@ const PerfilPage = () => {
         </div>
       </div>
 
+      {/* ── Dialogs ── */}
       <Dialog open={showNotificationPrefs} onOpenChange={setShowNotificationPrefs}>
         <DialogContentComponent className="max-w-md">
           <DialogHeaderComponent>
