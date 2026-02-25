@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic"
 
 import { useState, useEffect } from "react"
 import { useAuth } from "@/lib/auth-context"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -384,10 +384,14 @@ function LojinhaProfissionalPanel() {
   const { user, hasPermission } = useAuth()
   const { toast } = useToast()
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   const previewRole = user?.role ?? "super-admin"
   const isSuperAdmin = hasPermission("super-admin") || previewRole === "super-admin"
   const isGestor = hasPermission("gestor") || previewRole === "gestor"
+
+  // Pega o subtab da URL
+  const initialSubtab = searchParams.get("subtab") as any
 
   // ── Estados Super Admin ──────────────────────────────────────────────────────
   const [itens, setItens] = useState<StoreItem[]>([])
@@ -396,7 +400,7 @@ function LojinhaProfissionalPanel() {
   const [loadingItens, setLoadingItens] = useState(false)
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState<"criar" | "rascunhos" | "aprovacao" | "criados" | "ativos" | "auditoria" | "solicitacoes">(
-    "criar",
+    initialSubtab && ["criar", "rascunhos", "aprovacao", "criados", "ativos", "auditoria", "solicitacoes"].includes(initialSubtab) ? initialSubtab : "criar",
   )
   const [editingItem, setEditingItem] = useState<string | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
@@ -409,6 +413,10 @@ function LojinhaProfissionalPanel() {
     quantidade: null as number | null,
     gestoresDisponiveis: [] as string[],
     observacoesInternas: "",
+  })
+  const [reviewingRequestId, setReviewingRequestId] = useState<string | null>(null)
+  const [reviewForm, setReviewForm] = useState({
+    name: "", description: "", category: "", estimatedStarCost: 0, reviewNote: ""
   })
 
   // ── Estados Gestor ──────────────────────────────────────────────────────────
@@ -424,6 +432,18 @@ function LojinhaProfissionalPanel() {
   const [solicitacaoForm, setSolicitacaoForm] = useState({
     nome: "", descricao: "", categoria: "Vales", custoEstimado: 0, justificativa: "",
   })
+
+  // Novos estados do Gestor para Bug 2 e Bug 3
+  const [gestorTeam, setGestorTeam] = useState<{ id: string; nome: string; cargo: string }[]>([])
+  const [showAtivarDialog, setShowAtivarDialog] = useState(false)
+  const [itemParaAtivar, setItemParaAtivar] = useState<string | null>(null)
+  const [ativarScope, setAtivarScope] = useState<"all" | "specific">("all")
+  const [ativarUserIds, setAtivarUserIds] = useState<string[]>([])
+  const [gestorActiveTab, setGestorActiveTab] = useState<"estoque" | "extrato" | "solicitacoes">(
+    initialSubtab && ["estoque", "extrato", "solicitacoes"].includes(initialSubtab) ? initialSubtab : "estoque"
+  )
+  const [showEditSolicitacaoDialog, setShowEditSolicitacaoDialog] = useState(false)
+  const [editingSolicitacaoId, setEditingSolicitacaoId] = useState<string | null>(null)
 
   useEffect(() => {
     loadData()
@@ -450,12 +470,16 @@ function LojinhaProfissionalPanel() {
           setFormData(prev => ({ ...prev, categoriaId: catsRes.data[0].id }))
         }
       } else if (isGestor) {
-        const [invRes, resgRes] = await Promise.all([
+        const [invRes, resgRes, reqRes, teamRes] = await Promise.all([
           getManagerInventory(),
           getTeamRedemptions(),
+          getRewardRequests(),
+          user ? apiFetch<{ data: any[] }>(`/users?managerId=${user.id}&limit=200`) : Promise.resolve({ data: [] }),
         ])
         setGestorInventory(invRes.data)
         setResgatesTime(resgRes.data)
+        setRewardRequests(reqRes.data)
+        setGestorTeam(teamRes.data || [])
       }
     } catch (err) {
       toast({ title: "Erro ao carregar dados", description: (err as Error).message, variant: "destructive" })
@@ -1325,40 +1349,111 @@ function LojinhaProfissionalPanel() {
                             )}
                             <p className="text-xs text-muted-foreground mt-1">{new Date(req.createdAt).toLocaleString("pt-BR")}</p>
                           </div>
-                          {req.status === "pending" && (
+                          {req.status === "pending" && reviewingRequestId !== req.id && (
                             <div className="flex gap-2 flex-shrink-0">
                               <Button
                                 size="sm"
-                                className="bg-green-600 hover:bg-green-700"
-                                onClick={async () => {
-                                  try {
-                                    await reviewRewardRequest(req.id, { status: "approved" })
-                                    toast({ title: "Solicitação Aprovada", description: `"${req.name}" foi aprovada.` })
-                                    await loadData()
-                                  } catch (err) {
-                                    toast({ title: "Erro", description: (err as Error).message, variant: "destructive" })
-                                  }
+                                onClick={() => {
+                                  setReviewingRequestId(req.id)
+                                  setReviewForm({
+                                    name: req.name,
+                                    description: req.description,
+                                    category: req.category,
+                                    estimatedStarCost: req.estimatedStarCost,
+                                    reviewNote: ""
+                                  })
                                 }}
                               >
                                 <Check className="h-4 w-4 mr-1" />
-                                Aprovar
+                                Analisar Solicitação
                               </Button>
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                onClick={async () => {
-                                  try {
-                                    await reviewRewardRequest(req.id, { status: "rejected" })
-                                    toast({ title: "Solicitação Recusada", description: `"${req.name}" foi recusada.` })
-                                    await loadData()
-                                  } catch (err) {
-                                    toast({ title: "Erro", description: (err as Error).message, variant: "destructive" })
-                                  }
-                                }}
-                              >
-                                <XCircle className="h-4 w-4 mr-1" />
-                                Recusar
-                              </Button>
+                            </div>
+                          )}
+
+                          {req.status === "pending" && reviewingRequestId === req.id && (
+                            <div className="mt-4 border-t pt-4 space-y-4">
+                              <h5 className="font-semibold text-sm">Editar Detalhes (Opcional)</h5>
+                              <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-1">
+                                  <label className="text-xs font-medium">Nome</label>
+                                  <input type="text" className="w-full px-2 py-1 text-sm border rounded" value={reviewForm.name} onChange={e => setReviewForm({ ...reviewForm, name: e.target.value })} />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-xs font-medium">Categoria</label>
+                                  <Select value={reviewForm.category} onValueChange={v => setReviewForm({ ...reviewForm, category: v })}>
+                                    <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="Vales">Vales</SelectItem>
+                                      <SelectItem value="Produtos">Produtos</SelectItem>
+                                      <SelectItem value="Experiências">Experiências</SelectItem>
+                                      <SelectItem value="Benefícios">Benefícios</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="space-y-1 col-span-2">
+                                  <label className="text-xs font-medium">Descrição</label>
+                                  <Textarea className="w-full min-h-[60px] text-sm" value={reviewForm.description} onChange={e => setReviewForm({ ...reviewForm, description: e.target.value })} />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-xs font-medium">Custo Sugerido</label>
+                                  <input type="number" className="w-full px-2 py-1 text-sm border rounded" value={reviewForm.estimatedStarCost} onChange={e => setReviewForm({ ...reviewForm, estimatedStarCost: parseInt(e.target.value) || 0 })} />
+                                </div>
+                                <div className="space-y-1 col-span-2">
+                                  <label className="text-xs font-medium">Nota de Revisão (Para o Gestor)</label>
+                                  <Textarea className="w-full min-h-[60px] text-sm" placeholder="Motivo da aprovação/rejeição, ou alterações feitas..." value={reviewForm.reviewNote} onChange={e => setReviewForm({ ...reviewForm, reviewNote: e.target.value })} />
+                                </div>
+                              </div>
+                              <div className="flex gap-2 justify-end pt-2">
+                                <Button size="sm" variant="outline" onClick={() => setReviewingRequestId(null)}>Cancelar</Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={async () => {
+                                    try {
+                                      await reviewRewardRequest(req.id, {
+                                        status: "rejected",
+                                        reviewNote: reviewForm.reviewNote,
+                                        name: reviewForm.name !== req.name ? reviewForm.name : undefined,
+                                        description: reviewForm.description !== req.description ? reviewForm.description : undefined,
+                                        category: reviewForm.category !== req.category ? reviewForm.category : undefined,
+                                        estimatedStarCost: reviewForm.estimatedStarCost !== req.estimatedStarCost ? reviewForm.estimatedStarCost : undefined,
+                                      })
+                                      toast({ title: "Solicitação Recusada", description: `"${req.name}" foi recusada.` })
+                                      setReviewingRequestId(null)
+                                      await loadData()
+                                    } catch (err) {
+                                      toast({ title: "Erro", description: (err as Error).message, variant: "destructive" })
+                                    }
+                                  }}
+                                >
+                                  <XCircle className="h-4 w-4 mr-1" />
+                                  Recusar
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  className="bg-green-600 hover:bg-green-700"
+                                  onClick={async () => {
+                                    try {
+                                      await reviewRewardRequest(req.id, {
+                                        status: "approved",
+                                        reviewNote: reviewForm.reviewNote,
+                                        name: reviewForm.name !== req.name ? reviewForm.name : undefined,
+                                        description: reviewForm.description !== req.description ? reviewForm.description : undefined,
+                                        category: reviewForm.category !== req.category ? reviewForm.category : undefined,
+                                        estimatedStarCost: reviewForm.estimatedStarCost !== req.estimatedStarCost ? reviewForm.estimatedStarCost : undefined,
+                                      })
+                                      toast({ title: "Solicitação Aprovada", description: `"${req.name}" foi aprovada.` })
+                                      setReviewingRequestId(null)
+                                      await loadData()
+                                    } catch (err) {
+                                      toast({ title: "Erro", description: (err as Error).message, variant: "destructive" })
+                                    }
+                                  }}
+                                >
+                                  <Check className="h-4 w-4 mr-1" />
+                                  Aprovar
+                                </Button>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -1467,7 +1562,7 @@ function LojinhaProfissionalPanel() {
           </Button>
         </div>
 
-        <Tabs defaultValue="estoque" className="space-y-4">
+        <Tabs value={gestorActiveTab} onValueChange={(v: any) => setGestorActiveTab(v)} className="space-y-4">
           <TabsList>
             <TabsTrigger value="estoque">
               <Package className="mr-2 h-4 w-4" />
@@ -1476,6 +1571,15 @@ function LojinhaProfissionalPanel() {
             <TabsTrigger value="extrato">
               <FileText className="mr-2 h-4 w-4" />
               Extrato de Resgates do Time
+            </TabsTrigger>
+            <TabsTrigger value="solicitacoes">
+              <FileText className="mr-2 h-4 w-4" />
+              Minhas Solicitações
+              {rewardRequests.filter((r) => r.status === "rejected").length > 0 && (
+                <Badge className="ml-2 h-5 w-5 p-0 flex items-center justify-center text-xs bg-destructive">
+                  {rewardRequests.filter((r) => r.status === "rejected").length}
+                </Badge>
+              )}
             </TabsTrigger>
           </TabsList>
 
@@ -1547,17 +1651,11 @@ function LojinhaProfissionalPanel() {
                                 <Button
                                   size="sm"
                                   disabled={togglingItemId === inv.itemId}
-                                  onClick={async () => {
-                                    setTogglingItemId(inv.itemId)
-                                    try {
-                                      await setManagerInventoryStatus(inv.itemId, "active_for_team")
-                                      toast({ title: "Item Ativado", description: "Item disponibilizado para todo o seu time." })
-                                      await loadData()
-                                    } catch (err) {
-                                      toast({ title: "Erro", description: (err as Error).message, variant: "destructive" })
-                                    } finally {
-                                      setTogglingItemId(null)
-                                    }
+                                  onClick={() => {
+                                    setItemParaAtivar(inv.itemId)
+                                    setAtivarScope("all")
+                                    setAtivarUserIds([])
+                                    setShowAtivarDialog(true)
                                   }}
                                 >
                                   <Power className="mr-2 h-4 w-4" />
@@ -1588,8 +1686,8 @@ function LojinhaProfissionalPanel() {
                   <Button
                     variant="outline"
                     onClick={() => {
-                      const headers = ["Colaborador","Item","Estrelas","Código","Data"]
-                      const rows = resgatesTime.map(r => [r.user?.nome||"",r.item?.name||"",r.item?.costStars||0,r.id.slice(0,8).toUpperCase(),new Date(r.redeemedAt).toLocaleString("pt-BR")].join(","))
+                      const headers = ["Colaborador", "Item", "Estrelas", "Código", "Data"]
+                      const rows = resgatesTime.map(r => [r.user?.nome || "", r.item?.name || "", r.item?.costStars || 0, r.id.slice(0, 8).toUpperCase(), new Date(r.redeemedAt).toLocaleString("pt-BR")].join(","))
                       const csv = [headers.join(","), ...rows].join("\n")
                       const blob = new Blob([csv], { type: "text/csv" })
                       const url = window.URL.createObjectURL(blob)
@@ -1697,6 +1795,85 @@ function LojinhaProfissionalPanel() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          <TabsContent value="solicitacoes" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Minhas Solicitações</CardTitle>
+                    <CardDescription>
+                      Acompanhe o status das recompensas que você solicitou ao Super Admin
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {rewardRequests.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>Nenhuma solicitação enviada ainda</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {rewardRequests
+                      .slice()
+                      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                      .map((req) => (
+                        <Card key={req.id} className="p-4 border">
+                          <div className="flex justify-between items-start gap-4">
+                            <div>
+                              <div className="flex items-center gap-2 mb-1">
+                                <h4 className="font-semibold">{req.name}</h4>
+                                {req.status === "pending" && <Badge className="bg-amber-100 text-amber-800">Pendente</Badge>}
+                                {req.status === "approved" && <Badge className="bg-green-100 text-green-800">Aprovada</Badge>}
+                                {req.status === "rejected" && <Badge variant="destructive">Rejeitada</Badge>}
+                                {req.status === "converted" && <Badge className="bg-blue-100 text-blue-800">Convertida em Item</Badge>}
+                              </div>
+                              <p className="text-sm text-muted-foreground mt-1 max-w-2xl">{req.description}</p>
+                              <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                                <span>⭐ Custo est.: {req.estimatedStarCost}</span>
+                                <span>•</span>
+                                <span>Categoria: {req.category}</span>
+                                <span>•</span>
+                                <span>Enviada em: {new Date(req.createdAt).toLocaleDateString("pt-BR")}</span>
+                              </div>
+                              {req.reviewNote && (
+                                <div className="mt-3 bg-muted/50 p-3 rounded-md border text-sm">
+                                  <span className="font-medium">Feedback do Super Admin:</span> {req.reviewNote}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex-shrink-0">
+                              {req.status === "rejected" && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setEditingSolicitacaoId(req.id)
+                                    setSolicitacaoForm({
+                                      nome: req.name,
+                                      descricao: req.description,
+                                      categoria: req.category,
+                                      custoEstimado: req.estimatedStarCost,
+                                      justificativa: req.justification,
+                                    })
+                                    setShowEditSolicitacaoDialog(true)
+                                  }}
+                                >
+                                  <Edit className="mr-2 h-4 w-4" />
+                                  Re-editar e Enviar
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </Card>
+                      ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
 
         {/* Dialog para solicitar nova recompensa */}
@@ -1771,6 +1948,176 @@ function LojinhaProfissionalPanel() {
               <Button onClick={handleSolicitarRecompensa} disabled={saving}>
                 <Send className="mr-2 h-4 w-4" />
                 {saving ? "Enviando..." : "Enviar Solicitação"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Dialog Ativar para Time (Gestor) */}
+        <Dialog open={showAtivarDialog} onOpenChange={setShowAtivarDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Ativar para Equipe</DialogTitle>
+              <DialogDescription>
+                Selecione quem poderá ver e resgatar este item.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  id="scope-all"
+                  checked={ativarScope === "all"}
+                  onChange={() => setAtivarScope("all")}
+                />
+                <label htmlFor="scope-all" className="text-sm">Toda a equipe</label>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  id="scope-specific"
+                  checked={ativarScope === "specific"}
+                  onChange={() => setAtivarScope("specific")}
+                />
+                <label htmlFor="scope-specific" className="text-sm">Pessoas específicas</label>
+              </div>
+
+              {ativarScope === "specific" && (
+                <div className="mt-4 max-h-48 overflow-y-auto space-y-2 border rounded p-2">
+                  {gestorTeam.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center">Nenhum membro encontrado.</p>
+                  ) : (
+                    gestorTeam.map((member) => (
+                      <div key={member.id} className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id={`member-${member.id}`}
+                          checked={ativarUserIds.includes(member.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) setAtivarUserIds([...ativarUserIds, member.id])
+                            else setAtivarUserIds(ativarUserIds.filter(id => id !== member.id))
+                          }}
+                        />
+                        <label htmlFor={`member-${member.id}`} className="text-sm flex-1 cursor-pointer">
+                          {member.nome} <span className="text-xs text-muted-foreground">({member.cargo})</span>
+                        </label>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowAtivarDialog(false)}>Cancelar</Button>
+              <Button
+                disabled={togglingItemId !== null || (ativarScope === "specific" && ativarUserIds.length === 0)}
+                onClick={async () => {
+                  if (!itemParaAtivar) return
+                  setTogglingItemId(itemParaAtivar)
+                  try {
+                    await setManagerInventoryStatus(itemParaAtivar, "active_for_team", ativarScope, ativarScope === "specific" ? ativarUserIds : [])
+                    toast({ title: "Item Ativado", description: "Configuração de visibilidade salva com sucesso." })
+                    setShowAtivarDialog(false)
+                    await loadData()
+                  } catch (err) {
+                    toast({ title: "Erro", description: (err as Error).message, variant: "destructive" })
+                  } finally {
+                    setTogglingItemId(null)
+                  }
+                }}
+              >
+                Ativar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Dialog Editar Solicitação de Recompensa (Gestor) */}
+        <Dialog open={showEditSolicitacaoDialog} onOpenChange={setShowEditSolicitacaoDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Re-editar Solicitação de Recompensa</DialogTitle>
+              <DialogDescription>Ajuste os dados e envie novamente para aprovação.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium">Nome</label>
+                <input
+                  type="text"
+                  className="w-full mt-1 px-3 py-2 border rounded-md"
+                  value={solicitacaoForm.nome}
+                  onChange={(e) => setSolicitacaoForm({ ...solicitacaoForm, nome: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Descrição</label>
+                <Textarea
+                  className="w-full mt-1"
+                  value={solicitacaoForm.descricao}
+                  onChange={(e) => setSolicitacaoForm({ ...solicitacaoForm, descricao: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Categoria</label>
+                <Select
+                  value={solicitacaoForm.categoria}
+                  onValueChange={(value) => setSolicitacaoForm({ ...solicitacaoForm, categoria: value })}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Vales">Vales</SelectItem>
+                    <SelectItem value="Produtos">Produtos</SelectItem>
+                    <SelectItem value="Experiências">Experiências</SelectItem>
+                    <SelectItem value="Benefícios">Benefícios</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Custo Estimado (Estrelas)</label>
+                <input
+                  type="number"
+                  className="w-full mt-1 px-3 py-2 border rounded-md"
+                  value={solicitacaoForm.custoEstimado}
+                  onChange={(e) => setSolicitacaoForm({ ...solicitacaoForm, custoEstimado: parseInt(e.target.value) || 0 })}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Nova Justificativa</label>
+                <Textarea
+                  className="w-full mt-1"
+                  value={solicitacaoForm.justificativa}
+                  onChange={(e) => setSolicitacaoForm({ ...solicitacaoForm, justificativa: e.target.value })}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowEditSolicitacaoDialog(false)}>Cancelar</Button>
+              <Button
+                disabled={saving || !editingSolicitacaoId}
+                onClick={async () => {
+                  if (!editingSolicitacaoId) return
+                  setSaving(true)
+                  try {
+                    // Update API is dynamic now, uses custom lib import to update reward request
+                    const { updateRewardRequest } = await import('@/lib/store-api')
+                    await updateRewardRequest(editingSolicitacaoId, {
+                      name: solicitacaoForm.nome,
+                      description: solicitacaoForm.descricao,
+                      category: solicitacaoForm.categoria,
+                      estimatedStarCost: solicitacaoForm.custoEstimado,
+                      justification: solicitacaoForm.justificativa,
+                    })
+                    toast({ title: "Solicitação Re-enviada", description: "O status voltou para pendente." })
+                    setShowEditSolicitacaoDialog(false)
+                    await loadData()
+                  } catch (err) {
+                    toast({ title: "Erro", description: (err as Error).message, variant: "destructive" })
+                  } finally {
+                    setSaving(false)
+                  }
+                }}
+              >
+                {saving ? "Salvando..." : "Salvar e Re-solicitar"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1925,7 +2272,7 @@ function HumorDoDiaPanel() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Status</CardTitle>
-            
+
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
@@ -1947,9 +2294,9 @@ function HumorDoDiaPanel() {
             <p className="text-xs text-muted-foreground mt-1">
               {stats.proximaExibicao
                 ? new Date(stats.proximaExibicao).toLocaleTimeString("pt-BR", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })
                 : "Sem próxima exibição"}
             </p>
           </CardContent>
@@ -1969,7 +2316,7 @@ function HumorDoDiaPanel() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Opções de Humor</CardTitle>
-            
+
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -2015,8 +2362,8 @@ function HumorDoDiaPanel() {
                     checked={config.obrigatorio}
                     onChange={(e) => {
                       const obrigatorio = e.target.checked
-                      setConfig({ 
-                        ...config, 
+                      setConfig({
+                        ...config,
                         obrigatorio,
                         bloquearAcesso: obrigatorio,
                         permitePular: !obrigatorio
@@ -2027,7 +2374,7 @@ function HumorDoDiaPanel() {
                   <label htmlFor="obrigatorio" className="text-sm cursor-pointer flex-1">
                     <div className="font-medium">Ativar obrigatoriedade</div>
                     <div className="text-xs text-muted-foreground mt-1">
-                      {config.obrigatorio 
+                      {config.obrigatorio
                         ? "O colaborador não poderá pular ou fechar. O acesso à plataforma fica bloqueado até o registro."
                         : "O colaborador pode pular ou fechar o modal normalmente."
                       }
@@ -2039,7 +2386,7 @@ function HumorDoDiaPanel() {
               {/* TASK 5 - Frequência */}
               <div className="space-y-3">
                 <label className="text-sm font-medium">Frequência</label>
-                
+
                 {/* Card informativo fixo */}
                 <div className="rounded-lg bg-blue-50 border border-blue-200 p-3">
                   <p className="text-sm text-blue-900">
@@ -2071,10 +2418,10 @@ function HumorDoDiaPanel() {
                       <label className="text-sm font-medium">Selecione os dias no calendário</label>
                       <Badge>{selectedDates.length} dias selecionados</Badge>
                     </div>
-                    
+
                     <div className="rounded-lg border border-border bg-white p-4">
                       <p className="text-xs text-muted-foreground mb-3">Clique nos dias para selecionar/desselecionar</p>
-                      
+
                       {/* Calendário simplificado para próximos 90 dias */}
                       <div className="grid grid-cols-7 gap-2">
                         {Array.from({ length: 90 }, (_, i) => {
@@ -2082,7 +2429,7 @@ function HumorDoDiaPanel() {
                           date.setDate(date.getDate() + i)
                           const dateStr = date.toISOString().split('T')[0]
                           const isSelected = selectedDates.includes(dateStr)
-                          
+
                           return (
                             <button
                               key={dateStr}
@@ -2094,11 +2441,10 @@ function HumorDoDiaPanel() {
                                   setSelectedDates([...selectedDates, dateStr])
                                 }
                               }}
-                              className={`p-2 text-xs rounded border transition-colors ${
-                                isSelected 
-                                  ? "bg-primary text-primary-foreground border-primary" 
-                                  : "bg-background hover:bg-muted border-border"
-                              }`}
+                              className={`p-2 text-xs rounded border transition-colors ${isSelected
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "bg-background hover:bg-muted border-border"
+                                }`}
                             >
                               <div className="font-medium">{date.getDate()}</div>
                               <div className="text-xs opacity-70">{date.toLocaleDateString('pt-BR', { month: 'short' })}</div>
@@ -2110,8 +2456,8 @@ function HumorDoDiaPanel() {
 
                     {selectedDates.length > 0 && (
                       <div className="flex gap-2">
-                        <Button 
-                          variant="outline" 
+                        <Button
+                          variant="outline"
                           size="sm"
                           onClick={() => setSelectedDates([])}
                         >
@@ -2269,7 +2615,7 @@ function HumorDoDiaPanel() {
             {config.rewardsEnabled && (
               <div className="space-y-3 p-4 rounded-lg border border-muted bg-muted/30">
                 <p className="text-sm text-muted-foreground mb-3">Valores definidos pelo SuperAdmin (não editável):</p>
-                
+
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="p-3 rounded-lg bg-white border border-border">
                     <div className="text-xs text-muted-foreground">XP por registro</div>
@@ -2300,13 +2646,12 @@ function HumorDoDiaPanel() {
                 const date = new Date(day.data)
                 const dateStr = date.toISOString().split('T')[0]
                 const isActive = specificDaysEnabled ? selectedDates.includes(dateStr) : day.ativo
-                
+
                 return (
                   <div
                     key={day.id}
-                    className={`p-2 border rounded text-center transition-colors ${
-                      isActive ? "bg-primary/10 border-primary" : "bg-muted border-muted"
-                    }`}
+                    className={`p-2 border rounded text-center transition-colors ${isActive ? "bg-primary/10 border-primary" : "bg-muted border-muted"
+                      }`}
                   >
                     <div className="text-xs font-medium">{date.toLocaleDateString("pt-BR", { weekday: "short" })}</div>
                     <div className="text-sm font-semibold">{date.getDate()}</div>
@@ -3238,9 +3583,8 @@ function AdminPageContent() {
                 ].map((item) => (
                   <Card
                     key={item.title}
-                    className={`clay-card border-2 relative ${item.color} transition-all ${
-                      item.comingSoon ? "opacity-70 cursor-not-allowed" : "cursor-pointer hover:scale-105 hover:shadow-lg"
-                    }`}
+                    className={`clay-card border-2 relative ${item.color} transition-all ${item.comingSoon ? "opacity-70 cursor-not-allowed" : "cursor-pointer hover:scale-105 hover:shadow-lg"
+                      }`}
                     onClick={() => {
                       if (!item.comingSoon) {
                         router.push(item.href)
@@ -3271,7 +3615,7 @@ function AdminPageContent() {
             </div>
 
             <div>
-              
+
               <div className="grid grid-cols-1 gap-6">
                 {[
                   {
@@ -3329,16 +3673,16 @@ function AdminPageContent() {
               </CardContent>
             </Card>
 
-            
-        </TabsContent>
 
-        <TabsContent value="suas-criacoes" className="space-y-4">
-          <SuasCriacoesPanel />
-        </TabsContent>
+          </TabsContent>
 
-        <TabsContent value="lojinha" className="space-y-4">
-          <LojinhaProfissionalPanel />
-        </TabsContent>
+          <TabsContent value="suas-criacoes" className="space-y-4">
+            <SuasCriacoesPanel />
+          </TabsContent>
+
+          <TabsContent value="lojinha" className="space-y-4">
+            <LojinhaProfissionalPanel />
+          </TabsContent>
 
           <TabsContent value="humor-dia" className="space-y-4">
             <HumorDoDiaPanel />

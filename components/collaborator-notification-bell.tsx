@@ -10,22 +10,37 @@ import { NotificationService, type CollabFeedNotification } from "@/lib/notifica
 import { useAuth } from "@/lib/auth-context"
 import { formatDistanceToNow } from "date-fns"
 import { ptBR } from "date-fns/locale"
+import { useRouter } from "next/navigation"
 
 interface BackendNotification {
   id: string
   userId: string
   type:
-    | "xp_gained"
-    | "level_up"
-    | "achievement"
-    | "feedback_received"
-    | "feedback_approved"
-    | "survey_available"
-    | "event_reminder"
-    | "mission_complete"
-    | "reward_redeemed"
-    | "mention"
-    | "system"
+  | "xp_gained"
+  | "level_up"
+  | "achievement"
+  | "feedback_received"
+  | "feedback_approved"
+  | "survey_available"
+  | "event_reminder"
+  | "mission_complete"
+  | "reward_redeemed"
+  | "mention"
+  | "system"
+  | "store_item_created"
+  | "store_item_activated"
+  | "store_item_available_to_manager"
+  | "store_item_sent_to_manager"
+  | "store_manager_item_activated"
+  | "store_manager_item_deactivated"
+  | "store_reward_requested"
+  | "store_reward_request_reviewed"
+  | "store_item_available_to_team"
+  | "post_pending_approval"
+  | "post_approved"
+  | "post_rejected"
+  | "post_liked"
+  | "post_commented"
   title: string
   message: string
   data?: Record<string, unknown>
@@ -85,6 +100,7 @@ function LocalNotifIcon({ type }: { type: CollabFeedNotification["type"] }) {
 
 export function CollaboratorNotificationBell() {
   const { user } = useAuth()
+  const router = useRouter()
   const [backendNotifs, setBackendNotifs] = useState<BackendNotification[]>([])
   const [localNotifs, setLocalNotifs] = useState<CollabFeedNotification[]>([])
   const [backendUnread, setBackendUnread] = useState(0)
@@ -159,11 +175,59 @@ export function CollaboratorNotificationBell() {
   }
 
   const handleNotifClick = (item: DisplayNotif) => {
-    if (!isUnread(item)) return
-    if (item.source === "backend") {
-      handleMarkBackendRead(item.notif.id)
-    } else {
-      handleMarkLocalRead(item.notif.id)
+    if (isUnread(item)) {
+      if (item.source === "backend") {
+        handleMarkBackendRead(item.notif.id)
+      } else {
+        handleMarkLocalRead(item.notif.id)
+      }
+    }
+
+    setOpen(false)
+
+    // Routing logic for the bell
+    const type = item.source === "backend" ? item.notif.type : item.notif.type
+
+    switch (type) {
+      case "reward_redeemed":
+        if (user?.role === "super-admin" || user?.role === "gestor") {
+          router.push("/admin?tab=lojinha&subtab=extrato")
+        } else {
+          router.push("/recompensas")
+        }
+        break
+      // Lojinha admin routes
+      case "store_item_created":
+      case "store_item_activated":
+        router.push("/admin?tab=lojinha&subtab=ativos")
+        break
+      case "store_item_available_to_manager":
+      case "store_item_sent_to_manager":
+      case "store_manager_item_activated":
+      case "store_manager_item_deactivated":
+        router.push("/admin?tab=lojinha&subtab=estoque")
+        break
+      case "store_reward_requested":
+      case "store_reward_request_reviewed":
+        router.push("/admin?tab=lojinha&subtab=solicitacoes")
+        break
+      case "store_item_available_to_team":
+        router.push("/recompensas")
+        break
+      case "feedback_received":
+      case "feedback_approved":
+        router.push("/feedbacks")
+        break
+      case "survey_available":
+        router.push("/pesquisas")
+        break
+      case "post_liked":
+      case "post_approved":
+      case "post_commented":
+      case "post_rejected":
+      case "post_pending_approval":
+        router.push("/comunidade")
+        break
     }
   }
 
@@ -208,9 +272,8 @@ export function CollaboratorNotificationBell() {
               return (
                 <button
                   key={key}
-                  className={`flex w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 ${
-                    unread ? "bg-primary/5" : ""
-                  }`}
+                  className={`flex w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 ${unread ? "bg-primary/5" : ""
+                    }`}
                   onClick={() => handleNotifClick(item)}
                 >
                   <div className={`mt-0.5 ${unread && item.source === "backend" ? "text-primary" : "text-muted-foreground"}`}>

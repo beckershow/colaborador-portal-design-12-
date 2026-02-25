@@ -34,6 +34,8 @@ export function NotificationCenter() {
   const [loading, setLoading] = useState(false)
   const [rejectingNotif, setRejectingNotif] = useState<ApiNotification | null>(null)
   const [rejectReason, setRejectReason] = useState("")
+  // Tracking locally read notifications to prevent race condition with polling
+  const [locallyRead, setLocallyRead] = useState<Set<string>>(new Set())
 
   // ─── Carregar notificações ───────────────────────────────────────────────────
   const loadNotifications = useCallback(async () => {
@@ -45,12 +47,16 @@ export function NotificationCenter() {
         user.role === "super-admin"
           ? res.data.filter(n => n.type !== "post_pending_approval")
           : res.data
-      setNotifications(filtered)
-      setUnreadCount(filtered.filter(n => n.status === "unread").length)
+
+      // Apply locally read state to incoming server data
+      const merged = filtered.map(n => locallyRead.has(n.id) ? { ...n, status: "read" as const } : n)
+
+      setNotifications(merged)
+      setUnreadCount(merged.filter(n => n.status === "unread").length)
     } catch {
       // sem conexão — silencioso
     }
-  }, [user])
+  }, [user, locallyRead])
 
   // Carrega na abertura do painel e a cada 15s quando aberto
   useEffect(() => {
@@ -65,17 +71,22 @@ export function NotificationCenter() {
   // ─── Ações ───────────────────────────────────────────────────────────────────
 
   const handleMarkRead = async (id: string) => {
-    await markNotificationRead(id).catch(() => {})
+    setLocallyRead(prev => new Set(prev).add(id))
     setNotifications(prev =>
       prev.map(n => n.id === id ? { ...n, status: "read" as const, readAt: new Date().toISOString() } : n),
     )
     setUnreadCount(c => Math.max(0, c - 1))
+    await markNotificationRead(id).catch(() => { })
   }
 
   const handleMarkAllRead = async () => {
-    await markAllNotificationsRead().catch(() => {})
+    const newLocallyRead = new Set(locallyRead)
+    notifications.forEach(n => newLocallyRead.add(n.id))
+    setLocallyRead(newLocallyRead)
+
     setNotifications(prev => prev.map(n => ({ ...n, status: "read" as const })))
     setUnreadCount(0)
+    await markAllNotificationsRead().catch(() => { })
   }
 
   // ─── Aprovação de posts (post_pending_approval) ───────────────────────────────
@@ -181,14 +192,20 @@ export function NotificationCenter() {
         break
       case "store_item_created":
       case "store_item_activated":
+        setIsOpen(false)
+        router.push("/admin?tab=lojinha&subtab=ativos")
+        break
       case "store_item_available_to_manager":
       case "store_item_sent_to_manager":
       case "store_manager_item_activated":
       case "store_manager_item_deactivated":
+        setIsOpen(false)
+        router.push("/admin?tab=lojinha&subtab=estoque")
+        break
       case "store_reward_requested":
       case "store_reward_request_reviewed":
         setIsOpen(false)
-        router.push("/admin?tab=lojinha")
+        router.push("/admin?tab=lojinha&subtab=solicitacoes")
         break
       case "store_item_available_to_team":
         setIsOpen(false)
@@ -213,16 +230,16 @@ export function NotificationCenter() {
 
   const getIcon = (type: ApiNotification["type"]) => {
     switch (type) {
-      case "post_pending_approval":             return <Clock className="h-5 w-5 text-yellow-500" />
-      case "post_approved":                     return <CheckCircle className="h-5 w-5 text-green-500" />
-      case "post_rejected":                     return <X className="h-5 w-5 text-destructive" />
-      case "post_liked":                        return <Heart className="h-5 w-5 text-rose-500" />
-      case "post_commented":                    return <MessageCircle className="h-5 w-5 text-primary" />
-      case "xp_gained":                         return <ThumbsUp className="h-5 w-5 text-primary" />
-      case "level_up":                          return <AlertCircle className="h-5 w-5 text-accent" />
-      case "reward_redeemed":                   return <Gift className="h-5 w-5 text-accent" />
+      case "post_pending_approval": return <Clock className="h-5 w-5 text-yellow-500" />
+      case "post_approved": return <CheckCircle className="h-5 w-5 text-green-500" />
+      case "post_rejected": return <X className="h-5 w-5 text-destructive" />
+      case "post_liked": return <Heart className="h-5 w-5 text-rose-500" />
+      case "post_commented": return <MessageCircle className="h-5 w-5 text-primary" />
+      case "xp_gained": return <ThumbsUp className="h-5 w-5 text-primary" />
+      case "level_up": return <AlertCircle className="h-5 w-5 text-accent" />
+      case "reward_redeemed": return <Gift className="h-5 w-5 text-accent" />
       case "feedback_received":
-      case "feedback_approved":                 return <User className="h-5 w-5 text-primary" />
+      case "feedback_approved": return <User className="h-5 w-5 text-primary" />
       case "store_item_created":
       case "store_item_activated":
       case "store_item_available_to_manager":
@@ -231,14 +248,14 @@ export function NotificationCenter() {
       case "store_manager_item_activated":
       case "store_manager_item_deactivated":
       case "store_reward_requested":
-      case "store_reward_request_reviewed":     return <ShoppingBag className="h-5 w-5 text-primary" />
-      default:                                  return <Bell className="h-5 w-5 text-muted-foreground" />
+      case "store_reward_request_reviewed": return <ShoppingBag className="h-5 w-5 text-primary" />
+      default: return <Bell className="h-5 w-5 text-muted-foreground" />
     }
   }
 
   const formatTime = (iso: string) => {
     const diffMins = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000)
-    if (diffMins < 1)  return "Agora"
+    if (diffMins < 1) return "Agora"
     if (diffMins < 60) return `Há ${diffMins}min`
     const h = Math.floor(diffMins / 60)
     if (h < 24) return `Há ${h}h`
@@ -338,13 +355,11 @@ export function NotificationCenter() {
                   notifications.map(notif => (
                     <div
                       key={notif.id}
-                      className={`rounded-lg border p-4 transition-all ${
-                        isActionRequired(notif) ? "cursor-default" : "cursor-pointer hover:shadow-md"
-                      } ${
-                        notif.status === "unread"
+                      className={`rounded-lg border p-4 transition-all ${isActionRequired(notif) ? "cursor-default" : "cursor-pointer hover:shadow-md"
+                        } ${notif.status === "unread"
                           ? "bg-primary/5 border-primary/30"
                           : "bg-card border-border"
-                      }`}
+                        }`}
                       onClick={() => !isActionRequired(notif) && handleNotificationClick(notif)}
                     >
                       <div className="flex gap-3">

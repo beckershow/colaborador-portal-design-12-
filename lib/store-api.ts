@@ -204,10 +204,12 @@ export async function getManagerInventory(): Promise<{ data: StoreManagerInvento
 export async function setManagerInventoryStatus(
   itemId: string,
   status: "active_for_team" | "inactive_for_team",
+  teamScope?: "all" | "specific",
+  userIds?: string[],
 ): Promise<{ data: StoreManagerInventory }> {
   return apiFetch<{ data: StoreManagerInventory }>(`/store/manager-inventory/${itemId}`, {
     method: "PATCH",
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({ status, teamScope, userIds }),
   })
 }
 
@@ -280,9 +282,26 @@ export async function getRewardRequests(): Promise<{ data: StoreRewardRequest[] 
   return apiFetch<{ data: StoreRewardRequest[] }>("/store/reward-requests")
 }
 
+export async function updateRewardRequest(
+  id: string,
+  data: Partial<CreateRewardRequestData>,
+): Promise<{ data: StoreRewardRequest }> {
+  return apiFetch<{ data: StoreRewardRequest }>(`/store/reward-requests/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+}
+
 export async function reviewRewardRequest(
   id: string,
-  data: { status: "approved" | "rejected" | "converted"; reviewNote?: string },
+  data: {
+    status: "approved" | "rejected" | "converted"
+    reviewNote?: string
+    name?: string
+    description?: string
+    category?: string
+    estimatedStarCost?: number
+  },
 ): Promise<{ data: StoreRewardRequest }> {
   return apiFetch<{ data: StoreRewardRequest }>(`/store/reward-requests/${id}/review`, {
     method: "PATCH",
