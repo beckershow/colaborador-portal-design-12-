@@ -23,6 +23,10 @@ export interface Feedback {
   isPublic: boolean
   isAnonymous: boolean
   status: "pending" | "approved" | "rejected" | "sent"
+  sentiment?: "POSITIVE" | "NEGATIVE" | "NEUTRAL" | "CONSTRUCTIVE"
+  categories?: string[]
+  intensity?: number
+  aiAnalysis?: any
   createdAt: string
   viewedAt?: string
 }
@@ -36,6 +40,7 @@ export interface FeedbackRequest {
   topic: string
   message?: string
   status: "pending" | "completed"
+  expectation?: "positivo" | "construtivo" | "específico"
   createdAt: string
 }
 
@@ -133,7 +138,7 @@ export class FeedbackService {
       try {
         const feedbacks: Feedback[] = JSON.parse(stored)
         if (feedbacks.length > 30) return feedbacks // Já tem dados suficientes
-      } catch {}
+      } catch { }
     }
 
     // Gerar dados mock

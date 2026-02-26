@@ -22,7 +22,7 @@ import {
 import { Printer, Download } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { useRouter } from "next/navigation"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import {
   Gift,
   Star,
@@ -64,6 +64,17 @@ export default function RecompensasPage() {
   const [loading, setLoading] = useState(false)
 
   const saldoEstrelas = saldoLocal ?? user?.estrelas ?? 0
+
+  // Contar resgates válidos (não cancelados) por item para verificar limites
+  const redemptionCountByItem = useMemo(() => {
+    const counts: Record<string, number> = {}
+    meusResgates.forEach((r) => {
+      if (r.status !== "cancelled") {
+        counts[r.itemId] = (counts[r.itemId] || 0) + 1
+      }
+    })
+    return counts
+  }, [meusResgates])
 
   useEffect(() => {
     if (!user) return
@@ -300,8 +311,14 @@ do resgate realizado.
                 <div className="grid grid-cols-2 gap-4">
                   {recompensas.map((item) => {
                     const Icone = categoryIcons[item.category?.name ?? ""] || Gift
-                    const podeResgatar = saldoEstrelas >= item.costStars
                     const disponivel = item.quantity === null || item.quantity > 0
+                    const jaResgatou = !item.allowMultipleRedemptions && (redemptionCountByItem[item.id] || 0) > 0
+                    const limiteAtingido =
+                      item.allowMultipleRedemptions &&
+                      item.maxRedemptionsPerUser !== null &&
+                      (redemptionCountByItem[item.id] || 0) >= item.maxRedemptionsPerUser
+                    const temEstrelas = saldoEstrelas >= item.costStars
+                    const podeResgatar = temEstrelas && !jaResgatou && !limiteAtingido && disponivel
 
                     return (
                       <div
@@ -330,6 +347,17 @@ do resgate realizado.
                             </p>
                           )}
 
+                          {!item.allowMultipleRedemptions ? (
+                            <p className="mt-1 text-xs text-muted-foreground">Resgate único por colaborador</p>
+                          ) : item.maxRedemptionsPerUser ? (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Máx. {item.maxRedemptionsPerUser} resgates
+                              {redemptionCountByItem[item.id]
+                                ? ` • Você já resgatou ${redemptionCountByItem[item.id]}x`
+                                : ""}
+                            </p>
+                          ) : null}
+
                           <div className="mt-4 flex items-center gap-2">
                             <Star className="h-5 w-5 text-accent" />
                             <span className="text-xl font-bold text-accent-foreground">{item.costStars}</span>
@@ -338,15 +366,17 @@ do resgate realizado.
 
                           <Button
                             className="mt-4 w-full clay-button"
-                            disabled={!podeResgatar || !disponivel || loading}
-                            variant={podeResgatar && disponivel ? "default" : "outline"}
+                            disabled={!podeResgatar || loading}
+                            variant={podeResgatar ? "default" : "outline"}
                             onClick={() => handleResgatar(item)}
                           >
-                            {!disponivel
-                              ? "Esgotado"
-                              : podeResgatar
-                                ? "Resgatar"
-                                : `Precisa ${item.costStars - saldoEstrelas}⭐`}
+                            {jaResgatou || limiteAtingido
+                              ? "Limite atingido"
+                              : !disponivel
+                                ? "Esgotado"
+                                : temEstrelas
+                                  ? "Resgatar"
+                                  : `Precisa ${item.costStars - saldoEstrelas}⭐`}
                           </Button>
                         </div>
                       </div>

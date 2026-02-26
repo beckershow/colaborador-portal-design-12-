@@ -213,8 +213,13 @@ export function NotificationCenter() {
         break
       case "feedback_received":
       case "feedback_approved":
+      case "feedback_rejected":
         setIsOpen(false)
         router.push("/feedbacks")
+        break
+      case "feedback_request_received":
+        setIsOpen(false)
+        router.push("/feedbacks?tab=solicitar")
         break
       case "survey_available":
         setIsOpen(false)
@@ -239,7 +244,9 @@ export function NotificationCenter() {
       case "level_up": return <AlertCircle className="h-5 w-5 text-accent" />
       case "reward_redeemed": return <Gift className="h-5 w-5 text-accent" />
       case "feedback_received":
-      case "feedback_approved": return <User className="h-5 w-5 text-primary" />
+      case "feedback_approved":
+      case "feedback_request_received": return <MessageCircle className="h-5 w-5 text-primary" />
+      case "feedback_rejected": return <X className="h-5 w-5 text-destructive" />
       case "store_item_created":
       case "store_item_activated":
       case "store_item_available_to_manager":

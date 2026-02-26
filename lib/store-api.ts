@@ -51,6 +51,8 @@ export interface StoreItem {
   quantity: number | null
   imageUrl: string | null
   internalNotes: string | null
+  allowMultipleRedemptions: boolean
+  maxRedemptionsPerUser: number | null
   status: StoreItemStatus
   createdById: string
   createdAt: string
@@ -92,7 +94,8 @@ export interface StoreRewardRequest {
   category: string
   estimatedStarCost: number
   justification: string
-  status: "pending" | "approved" | "rejected" | "converted"
+  imageUrl: string | null
+  status: "pending" | "approved" | "rejected" | "refused" | "proceeded" | "converted"
   reviewNote: string | null
   reviewedById: string | null
   reviewedAt: string | null
@@ -122,8 +125,11 @@ export interface CreateStoreItemData {
   quantity?: number | null
   imageUrl?: string | null
   internalNotes?: string | null
+  allowMultipleRedemptions?: boolean
+  maxRedemptionsPerUser?: number | null
   status?: "draft" | "created"
   managerIds?: string[]
+  fromRequestId?: string
 }
 
 export interface UpdateStoreItemData {
@@ -134,6 +140,8 @@ export interface UpdateStoreItemData {
   quantity?: number | null
   imageUrl?: string | null
   internalNotes?: string | null
+  allowMultipleRedemptions?: boolean
+  maxRedemptionsPerUser?: number | null
   managerIds?: string[]
 }
 
@@ -269,6 +277,7 @@ export interface CreateRewardRequestData {
   category: string
   estimatedStarCost: number
   justification: string
+  imageUrl?: string | null
 }
 
 export async function createRewardRequest(data: CreateRewardRequestData): Promise<{ data: StoreRewardRequest }> {
@@ -295,7 +304,7 @@ export async function updateRewardRequest(
 export async function reviewRewardRequest(
   id: string,
   data: {
-    status: "approved" | "rejected" | "converted"
+    status: "approved" | "rejected" | "refused" | "proceeded" | "converted"
     reviewNote?: string
     name?: string
     description?: string

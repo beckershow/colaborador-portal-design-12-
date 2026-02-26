@@ -56,6 +56,7 @@ import {
   Trophy,
   CalendarDays,
   ClipboardList,
+  ArrowRight,
 } from "lucide-react"
 import { CriacaoCentralizadaService } from "@/lib/criacao-centralizada-service"
 import { AnalyticsService } from "@/lib/analytics-service"
@@ -103,6 +104,7 @@ import { FeedbackAnalyticsService, type FeedbackUserAnalytics } from "@/lib/feed
 import { SurveyAnalyticsService, type SurveyUserAnalytics } from "@/lib/survey-analytics-service"
 import { SurveyService } from "@/lib/survey-service"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { HumorConfigService, type HumorConfig, type HumorOption, type HumorSchedule } from "@/lib/humor-config-service"
 import { SuasCriacoesService, type Creation, type CreationType } from "@/lib/suas-criacoes-service"
@@ -409,9 +411,12 @@ function LojinhaProfissionalPanel() {
     descricao: "",
     custoEstrelas: 0,
     quantidade: null as number | null,
+    allowMultipleRedemptions: false,
+    maxRedemptionsPerUser: null as number | null,
     gestoresDisponiveis: [] as string[],
     observacoesInternas: "",
   })
+  const [fromRequestId, setFromRequestId] = useState<string | null>(null)
   const [reviewingRequestId, setReviewingRequestId] = useState<string | null>(null)
   const [reviewForm, setReviewForm] = useState({
     name: "", description: "", category: "", estimatedStarCost: 0, reviewNote: ""
@@ -442,10 +447,44 @@ function LojinhaProfissionalPanel() {
   )
   const [showEditSolicitacaoDialog, setShowEditSolicitacaoDialog] = useState(false)
   const [editingSolicitacaoId, setEditingSolicitacaoId] = useState<string | null>(null)
+  // Estados para upload de imagem das dialogs de solicitação
+  const [solicitacaoImageFile, setSolicitacaoImageFile] = useState<File | null>(null)
+  const [solicitacaoImagePreview, setSolicitacaoImagePreview] = useState<string | null>(null)
+  const [editSolicitacaoImageFile, setEditSolicitacaoImageFile] = useState<File | null>(null)
+  const [editSolicitacaoImagePreview, setEditSolicitacaoImagePreview] = useState<string | null>(null)
 
   useEffect(() => {
     loadData()
   }, [isSuperAdmin, isGestor, user])
+
+  // Pré-preencher formulário de criar item quando superadmin clica em "Prosseguir" em uma solicitação
+  useEffect(() => {
+    if (!isSuperAdmin || categories.length === 0) return
+    const prefillJson = sessionStorage.getItem("engageai-prefill-store-item")
+    if (!prefillJson) return
+    sessionStorage.removeItem("engageai-prefill-store-item")
+    try {
+      const prefill = JSON.parse(prefillJson)
+      const cat = categories.find(c =>
+        c.name.toLowerCase() === (prefill.categoria ?? "").toLowerCase()
+      ) ?? categories[0]
+      setFormData(prev => ({
+        ...prev,
+        nome: prefill.nome ?? "",
+        descricao: prefill.descricao ?? "",
+        categoriaId: cat?.id ?? prev.categoriaId,
+        custoEstrelas: prefill.custoEstrelas ?? 0,
+        gestoresDisponiveis: prefill.gestorId ? [prefill.gestorId] : [],
+        allowMultipleRedemptions: false,
+        maxRedemptionsPerUser: null,
+      }))
+      if (prefill.imageUrl) setImagePreview(getImageUrl(prefill.imageUrl))
+      if (prefill.fromRequestId) setFromRequestId(prefill.fromRequestId)
+      setActiveTab("criar")
+    } catch {
+      // JSON parse error — ignorar
+    }
+  }, [categories])
 
   const loadData = async () => {
     setLoadingItens(true)
@@ -507,6 +546,10 @@ function LojinhaProfissionalPanel() {
       toast({ title: "Erro de Validação", description: "Preencha nome, descrição e categoria.", variant: "destructive" })
       return
     }
+    if (formData.allowMultipleRedemptions && (formData.maxRedemptionsPerUser === null || formData.maxRedemptionsPerUser < 2)) {
+      toast({ title: "Erro de Validação", description: "Informe a quantidade máxima de resgates por colaborador (mínimo 2).", variant: "destructive" })
+      return
+    }
     const gestoresValidos = formData.gestoresDisponiveis.filter(id => id !== "placeholder")
     if (formData.gestoresDisponiveis.length > 0 && gestoresValidos.length === 0) {
       toast({ title: "Erro de Validação", description: "Selecione ao menos 1 gestor ou 'Disponível para todos'.", variant: "destructive" })
@@ -533,6 +576,8 @@ function LojinhaProfissionalPanel() {
         quantity: formData.quantidade,
         imageUrl,
         internalNotes: formData.observacoesInternas || null,
+        allowMultipleRedemptions: formData.allowMultipleRedemptions,
+        maxRedemptionsPerUser: formData.allowMultipleRedemptions ? formData.maxRedemptionsPerUser : null,
         managerIds: gestoresValidos,
       }
 
@@ -540,7 +585,12 @@ function LojinhaProfissionalPanel() {
         await updateStoreItem(editingItem, payload)
         toast({ title: "Item Atualizado", description: `${formData.nome} foi atualizado com sucesso.` })
       } else {
-        await createStoreItem({ ...payload, status: salvarComoRascunho ? "draft" : "created" })
+        await createStoreItem({
+          ...payload,
+          status: salvarComoRascunho ? "draft" : "created",
+          ...(fromRequestId ? { fromRequestId } : {}),
+        })
+        setFromRequestId(null)
         toast({
           title: salvarComoRascunho ? "Rascunho Salvo" : "Item Criado",
           description: salvarComoRascunho
@@ -566,12 +616,15 @@ function LojinhaProfissionalPanel() {
       descricao: "",
       custoEstrelas: 0,
       quantidade: null,
+      allowMultipleRedemptions: false,
+      maxRedemptionsPerUser: null,
       gestoresDisponiveis: [],
       observacoesInternas: "",
     }))
     setImagePreview(null)
     setSelectedFile(null)
     setEditingItem(null)
+    setFromRequestId(null)
   }
 
   const handleAtivarItem = async (itemId: string) => {
@@ -608,16 +661,26 @@ function LojinhaProfissionalPanel() {
   const handleSolicitarRecompensa = async () => {
     setSaving(true)
     try {
+      let imageUrl: string | null = null
+      if (solicitacaoImageFile) {
+        const uploadRes = await uploadFileToBackend(solicitacaoImageFile, "store")
+        imageUrl = uploadRes.data.key
+      }
       await createRewardRequest({
         name: solicitacaoForm.nome,
         description: solicitacaoForm.descricao,
         category: solicitacaoForm.categoria,
         estimatedStarCost: solicitacaoForm.custoEstimado,
         justification: solicitacaoForm.justificativa,
+        imageUrl,
       })
       toast({ title: "Solicitação Enviada!", description: "O Super Admin foi notificado." })
       setSolicitacaoForm({ nome: "", descricao: "", categoria: "Vales", custoEstimado: 0, justificativa: "" })
+      setSolicitacaoImageFile(null)
+      setSolicitacaoImagePreview(null)
       setShowSolicitarDialog(false)
+      await loadData()
+      setGestorActiveTab("solicitacoes")
     } catch (err) {
       toast({ title: "Erro", description: (err as Error).message, variant: "destructive" })
     } finally {
@@ -845,6 +908,50 @@ function LojinhaProfissionalPanel() {
               </CardContent>
             </Card>
 
+            {/* Card de Limite de Resgates por Colaborador */}
+            <Card className="clay-card">
+              <CardHeader>
+                <CardTitle>Limite de Resgates por Colaborador</CardTitle>
+                <CardDescription>Define quantas vezes cada colaborador pode resgatar este item</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Colaborador pode resgatar mais de uma vez?</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {formData.allowMultipleRedemptions
+                        ? "Sim — com limite máximo configurável"
+                        : "Não — apenas 1 resgate por colaborador"}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={formData.allowMultipleRedemptions}
+                    onCheckedChange={(checked) =>
+                      setFormData({ ...formData, allowMultipleRedemptions: checked, maxRedemptionsPerUser: null })
+                    }
+                  />
+                </div>
+                {formData.allowMultipleRedemptions && (
+                  <div className="space-y-2 pt-2 border-t border-border">
+                    <label className="text-sm font-medium">Quantidade máxima de resgates por colaborador*</label>
+                    <input
+                      type="number"
+                      min="2"
+                      value={formData.maxRedemptionsPerUser ?? ""}
+                      onChange={(e) =>
+                        setFormData({ ...formData, maxRedemptionsPerUser: parseInt(e.target.value) || null })
+                      }
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      placeholder="Ex: 3"
+                    />
+                    {formData.maxRedemptionsPerUser !== null && formData.maxRedemptionsPerUser < 2 && (
+                      <p className="text-xs text-destructive">Valor mínimo: 2</p>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
             {/* Card de Disponibilidade do Item */}
             <Card className="clay-card">
               <CardHeader>
@@ -1017,10 +1124,12 @@ function LojinhaProfissionalPanel() {
                                   descricao: item.description,
                                   custoEstrelas: item.costStars,
                                   quantidade: item.quantity,
+                                  allowMultipleRedemptions: item.allowMultipleRedemptions ?? false,
+                                  maxRedemptionsPerUser: item.maxRedemptionsPerUser ?? null,
                                   gestoresDisponiveis: item.managerVisibility?.map(m => m.managerId) || [],
                                   observacoesInternas: item.internalNotes || "",
                                 })
-                                setImagePreview(item.imageUrl || null)
+                                setImagePreview(item.imageUrl ? getImageUrl(item.imageUrl) : null)
                                 setActiveTab("criar")
                               }}
                             >
@@ -1151,10 +1260,12 @@ function LojinhaProfissionalPanel() {
                                     descricao: item.description,
                                     custoEstrelas: item.costStars,
                                     quantidade: item.quantity,
+                                    allowMultipleRedemptions: item.allowMultipleRedemptions ?? false,
+                                    maxRedemptionsPerUser: item.maxRedemptionsPerUser ?? null,
                                     gestoresDisponiveis: item.managerVisibility?.map(m => m.managerId) || [],
                                     observacoesInternas: item.internalNotes || "",
                                   })
-                                  setImagePreview(item.imageUrl || null)
+                                  setImagePreview(item.imageUrl ? getImageUrl(item.imageUrl) : null)
                                   setActiveTab("criar")
                                 }}
                               >
@@ -1290,13 +1401,22 @@ function LojinhaProfissionalPanel() {
                   <div className="space-y-4">
                     {rewardRequests.map((req) => (
                       <div key={req.id} className="border border-border rounded-lg p-4">
-                        <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-start gap-4">
+                          {req.imageUrl && (
+                            <img
+                              src={getImageUrl(req.imageUrl) ?? ""}
+                              alt={req.name}
+                              className="w-20 h-20 object-cover rounded-lg flex-shrink-0"
+                            />
+                          )}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
                               <h4 className="font-semibold">{req.name}</h4>
                               {req.status === "pending" && <Badge className="bg-amber-100 text-amber-800">Pendente</Badge>}
                               {req.status === "approved" && <Badge className="bg-green-100 text-green-800">Aprovada</Badge>}
                               {req.status === "rejected" && <Badge variant="destructive">Recusada</Badge>}
+                              {req.status === "refused" && <Badge variant="destructive">Recusada</Badge>}
+                              {req.status === "proceeded" && <Badge className="bg-blue-100 text-blue-800">Em Progresso</Badge>}
                               {req.status === "converted" && <Badge className="bg-blue-100 text-blue-800">Convertida</Badge>}
                             </div>
                             <p className="text-sm text-muted-foreground">{req.description}</p>
@@ -1375,14 +1495,14 @@ function LojinhaProfissionalPanel() {
                                   onClick={async () => {
                                     try {
                                       await reviewRewardRequest(req.id, {
-                                        status: "rejected",
+                                        status: "refused",
                                         reviewNote: reviewForm.reviewNote,
                                         name: reviewForm.name !== req.name ? reviewForm.name : undefined,
                                         description: reviewForm.description !== req.description ? reviewForm.description : undefined,
                                         category: reviewForm.category !== req.category ? reviewForm.category : undefined,
                                         estimatedStarCost: reviewForm.estimatedStarCost !== req.estimatedStarCost ? reviewForm.estimatedStarCost : undefined,
                                       })
-                                      toast({ title: "Solicitação Recusada", description: `"${req.name}" foi recusada.` })
+                                      toast({ title: "Solicitação Recusada", description: `"${req.name}" foi recusada. O gestor foi notificado.` })
                                       setReviewingRequestId(null)
                                       await loadData()
                                     } catch (err) {
@@ -1395,18 +1515,28 @@ function LojinhaProfissionalPanel() {
                                 </Button>
                                 <Button
                                   size="sm"
-                                  className="bg-green-600 hover:bg-green-700"
+                                  className="bg-blue-600 hover:bg-blue-700"
                                   onClick={async () => {
                                     try {
                                       await reviewRewardRequest(req.id, {
-                                        status: "approved",
-                                        reviewNote: reviewForm.reviewNote,
+                                        status: "proceeded",
+                                        reviewNote: reviewForm.reviewNote || undefined,
                                         name: reviewForm.name !== req.name ? reviewForm.name : undefined,
                                         description: reviewForm.description !== req.description ? reviewForm.description : undefined,
                                         category: reviewForm.category !== req.category ? reviewForm.category : undefined,
                                         estimatedStarCost: reviewForm.estimatedStarCost !== req.estimatedStarCost ? reviewForm.estimatedStarCost : undefined,
                                       })
-                                      toast({ title: "Solicitação Aprovada", description: `"${req.name}" foi aprovada.` })
+                                      // Guardar dados no sessionStorage para pré-preencher o formulário de criação
+                                      sessionStorage.setItem("engageai-prefill-store-item", JSON.stringify({
+                                        nome: reviewForm.name,
+                                        descricao: reviewForm.description,
+                                        categoria: reviewForm.category,
+                                        custoEstrelas: reviewForm.estimatedStarCost,
+                                        imageUrl: req.imageUrl,
+                                        gestorId: req.managerId,
+                                        fromRequestId: req.id,
+                                      }))
+                                      toast({ title: "Prosseguindo!", description: "Formulário de criação pré-preenchido com os dados da solicitação." })
                                       setReviewingRequestId(null)
                                       await loadData()
                                     } catch (err) {
@@ -1414,8 +1544,8 @@ function LojinhaProfissionalPanel() {
                                     }
                                   }}
                                 >
-                                  <Check className="h-4 w-4 mr-1" />
-                                  Aprovar
+                                  <ArrowRight className="h-4 w-4 mr-1" />
+                                  Prosseguir
                                 </Button>
                               </div>
                             </div>
@@ -1485,7 +1615,12 @@ function LojinhaProfissionalPanel() {
                           item_redeemed: "Resgatado",
                           redemption_status_updated: "Status de resgate atualizado",
                           reward_requested: "Solicitação criada",
+                          reward_request_created: "Solicitação criada",
                           reward_request_reviewed: "Solicitação revisada",
+                          reward_request_refused: "Solicitação recusada",
+                          reward_request_proceeded: "Solicitação em progresso",
+                          reward_request_resubmitted: "Solicitação reenviada",
+                          item_created_from_request: "Item criado de solicitação",
                         }
                         return (
                           <TableRow key={log.id}>
@@ -1539,9 +1674,9 @@ function LojinhaProfissionalPanel() {
             <TabsTrigger value="solicitacoes">
               <FileText className="mr-2 h-4 w-4" />
               Minhas Solicitações
-              {rewardRequests.filter((r) => r.status === "rejected").length > 0 && (
+              {rewardRequests.filter((r) => r.status === "rejected" || r.status === "refused").length > 0 && (
                 <Badge className="ml-2 h-5 w-5 p-0 flex items-center justify-center text-xs bg-destructive">
-                  {rewardRequests.filter((r) => r.status === "rejected").length}
+                  {rewardRequests.filter((r) => r.status === "rejected" || r.status === "refused").length}
                 </Badge>
               )}
             </TabsTrigger>
@@ -1586,6 +1721,12 @@ function LojinhaProfissionalPanel() {
                                   ) : (
                                     <Badge variant="secondary">Em Estoque</Badge>
                                   )}
+                                  {!item.allowMultipleRedemptions
+                                    ? <Badge variant="outline" className="text-xs border-dashed">Resgate único</Badge>
+                                    : item.maxRedemptionsPerUser
+                                      ? <Badge variant="outline" className="text-xs border-dashed">Máx. {item.maxRedemptionsPerUser}x/colaborador</Badge>
+                                      : null
+                                  }
                                 </div>
                               </div>
                             </div>
@@ -1787,30 +1928,41 @@ function LojinhaProfissionalPanel() {
                       .map((req) => (
                         <Card key={req.id} className="p-4 border">
                           <div className="flex justify-between items-start gap-4">
-                            <div>
-                              <div className="flex items-center gap-2 mb-1">
-                                <h4 className="font-semibold">{req.name}</h4>
-                                {req.status === "pending" && <Badge className="bg-amber-100 text-amber-800">Pendente</Badge>}
-                                {req.status === "approved" && <Badge className="bg-green-100 text-green-800">Aprovada</Badge>}
-                                {req.status === "rejected" && <Badge variant="destructive">Rejeitada</Badge>}
-                                {req.status === "converted" && <Badge className="bg-blue-100 text-blue-800">Convertida em Item</Badge>}
-                              </div>
-                              <p className="text-sm text-muted-foreground mt-1 max-w-2xl">{req.description}</p>
-                              <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
-                                <span>⭐ Custo est.: {req.estimatedStarCost}</span>
-                                <span>•</span>
-                                <span>Categoria: {req.category}</span>
-                                <span>•</span>
-                                <span>Enviada em: {new Date(req.createdAt).toLocaleDateString("pt-BR")}</span>
-                              </div>
-                              {req.reviewNote && (
-                                <div className="mt-3 bg-muted/50 p-3 rounded-md border text-sm">
-                                  <span className="font-medium">Feedback do Super Admin:</span> {req.reviewNote}
-                                </div>
+                            <div className="flex items-start gap-3 flex-1">
+                              {req.imageUrl && (
+                                <img
+                                  src={getImageUrl(req.imageUrl) ?? ""}
+                                  alt={req.name}
+                                  className="w-12 h-12 object-cover rounded flex-shrink-0"
+                                />
                               )}
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <h4 className="font-semibold">{req.name}</h4>
+                                  {req.status === "pending" && <Badge className="bg-amber-100 text-amber-800">Pendente</Badge>}
+                                  {req.status === "approved" && <Badge className="bg-green-100 text-green-800">Aprovada</Badge>}
+                                  {req.status === "rejected" && <Badge variant="destructive">Recusada</Badge>}
+                                  {req.status === "refused" && <Badge variant="destructive">Recusada</Badge>}
+                                  {req.status === "proceeded" && <Badge className="bg-blue-100 text-blue-800">Em Progresso</Badge>}
+                                  {req.status === "converted" && <Badge className="bg-blue-100 text-blue-800">Convertida em Item</Badge>}
+                                </div>
+                                <p className="text-sm text-muted-foreground mt-1 max-w-2xl">{req.description}</p>
+                                <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                                  <span>⭐ Custo est.: {req.estimatedStarCost}</span>
+                                  <span>•</span>
+                                  <span>Categoria: {req.category}</span>
+                                  <span>•</span>
+                                  <span>Enviada em: {new Date(req.createdAt).toLocaleDateString("pt-BR")}</span>
+                                </div>
+                                {req.reviewNote && (
+                                  <div className="mt-3 bg-muted/50 p-3 rounded-md border text-sm">
+                                    <span className="font-medium">Feedback do Super Admin:</span> {req.reviewNote}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                             <div className="flex-shrink-0">
-                              {req.status === "rejected" && (
+                              {(req.status === "rejected" || req.status === "refused") && (
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -1823,6 +1975,8 @@ function LojinhaProfissionalPanel() {
                                       custoEstimado: req.estimatedStarCost,
                                       justificativa: req.justification,
                                     })
+                                    setEditSolicitacaoImagePreview(req.imageUrl ? getImageUrl(req.imageUrl) : null)
+                                    setEditSolicitacaoImageFile(null)
                                     setShowEditSolicitacaoDialog(true)
                                   }}
                                 >
@@ -1905,9 +2059,47 @@ function LojinhaProfissionalPanel() {
                   onChange={(e) => setSolicitacaoForm({ ...solicitacaoForm, justificativa: e.target.value })}
                 />
               </div>
+              <div>
+                <label className="text-sm font-medium">Imagem (opcional)</label>
+                {solicitacaoImagePreview ? (
+                  <div className="relative mt-1">
+                    <img src={solicitacaoImagePreview} alt="Preview" className="h-24 w-full object-cover rounded" />
+                    <Button
+                      variant="destructive"
+                      size="icon"
+                      className="absolute right-2 top-2 h-6 w-6"
+                      onClick={() => { setSolicitacaoImageFile(null); setSolicitacaoImagePreview(null) }}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center justify-center w-full h-20 border-2 border-dashed rounded cursor-pointer mt-1 hover:bg-muted/50">
+                    <p className="text-xs text-muted-foreground">Clique para enviar imagem</p>
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) {
+                          setSolicitacaoImageFile(file)
+                          const reader = new FileReader()
+                          reader.onloadend = () => setSolicitacaoImagePreview(reader.result as string)
+                          reader.readAsDataURL(file)
+                        }
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setShowSolicitarDialog(false)}>
+              <Button variant="outline" onClick={() => {
+                setShowSolicitarDialog(false)
+                setSolicitacaoImageFile(null)
+                setSolicitacaoImagePreview(null)
+              }}>
                 Cancelar
               </Button>
               <Button onClick={handleSolicitarRecompensa} disabled={saving}>
@@ -2073,16 +2265,60 @@ function LojinhaProfissionalPanel() {
                   onChange={(e) => setSolicitacaoForm({ ...solicitacaoForm, justificativa: e.target.value })}
                 />
               </div>
+              <div>
+                <label className="text-sm font-medium">Imagem (opcional)</label>
+                {editSolicitacaoImagePreview ? (
+                  <div className="relative mt-1">
+                    <img src={editSolicitacaoImagePreview} alt="Preview" className="h-24 w-full object-cover rounded" />
+                    <Button
+                      variant="destructive"
+                      size="icon"
+                      className="absolute right-2 top-2 h-6 w-6"
+                      onClick={() => { setEditSolicitacaoImageFile(null); setEditSolicitacaoImagePreview(null) }}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center justify-center w-full h-20 border-2 border-dashed rounded cursor-pointer mt-1 hover:bg-muted/50">
+                    <p className="text-xs text-muted-foreground">Clique para enviar imagem</p>
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) {
+                          setEditSolicitacaoImageFile(file)
+                          const reader = new FileReader()
+                          reader.onloadend = () => setEditSolicitacaoImagePreview(reader.result as string)
+                          reader.readAsDataURL(file)
+                        }
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setShowEditSolicitacaoDialog(false)}>Cancelar</Button>
+              <Button variant="outline" onClick={() => {
+                setShowEditSolicitacaoDialog(false)
+                setEditSolicitacaoImageFile(null)
+                setEditSolicitacaoImagePreview(null)
+              }}>Cancelar</Button>
               <Button
                 disabled={saving || !editingSolicitacaoId}
                 onClick={async () => {
                   if (!editingSolicitacaoId) return
                   setSaving(true)
                   try {
-                    // Update API is dynamic now, uses custom lib import to update reward request
+                    let imageUrl: string | null | undefined = undefined
+                    if (editSolicitacaoImageFile) {
+                      const uploadRes = await uploadFileToBackend(editSolicitacaoImageFile, "store")
+                      imageUrl = uploadRes.data.key
+                    } else if (editSolicitacaoImagePreview === null) {
+                      imageUrl = null // imagem removida
+                    }
                     const { updateRewardRequest } = await import('@/lib/store-api')
                     await updateRewardRequest(editingSolicitacaoId, {
                       name: solicitacaoForm.nome,
@@ -2090,9 +2326,12 @@ function LojinhaProfissionalPanel() {
                       category: solicitacaoForm.categoria,
                       estimatedStarCost: solicitacaoForm.custoEstimado,
                       justification: solicitacaoForm.justificativa,
+                      ...(imageUrl !== undefined ? { imageUrl } : {}),
                     })
                     toast({ title: "Solicitação Re-enviada", description: "O status voltou para pendente." })
                     setShowEditSolicitacaoDialog(false)
+                    setEditSolicitacaoImageFile(null)
+                    setEditSolicitacaoImagePreview(null)
                     await loadData()
                   } catch (err) {
                     toast({ title: "Erro", description: (err as Error).message, variant: "destructive" })
@@ -2891,7 +3130,6 @@ function SuasCriacoesPanel() {
                     */}
                     <SelectItem value="treinamento">Treinamentos</SelectItem>
                     <SelectItem value="meta">Metas</SelectItem>
-                    <SelectItem value="missao-do-dia">Missões do Dia</SelectItem>
                     <SelectItem value="evento">Eventos</SelectItem>
                   </SelectContent>
                 </Select>
@@ -2920,13 +3158,12 @@ function SuasCriacoesPanel() {
             <GraduationCap className="h-4 w-4" />
             Treinamentos
           </TabsTrigger>
-          <TabsTrigger value="meta" className="flex items-center gap-2">
+          <TabsTrigger value="meta" className="flex items-center gap-2 opacity-60 cursor-not-allowed pointer-events-none" disabled>
             <Trophy className="h-4 w-4" />
             Metas
-          </TabsTrigger>
-          <TabsTrigger value="missao-do-dia" className="flex items-center gap-2">
-            <Zap className="h-4 w-4" />
-            Missões
+            <span className="ml-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Em breve
+            </span>
           </TabsTrigger>
           <TabsTrigger value="evento" className="flex items-center gap-2">
             <CalendarDays className="h-4 w-4" />
@@ -2935,7 +3172,7 @@ function SuasCriacoesPanel() {
         </TabsList>
 
         {/* Content for all tabs */}
-        {(["ultimas", "campanha", "pesquisa", "treinamento", "meta", "missao-do-dia", "evento"] as const).map((tabValue) => (
+        {(["ultimas", "campanha", "pesquisa", "treinamento", "meta", "evento"] as const).map((tabValue) => (
           <TabsContent key={tabValue} value={tabValue} className="space-y-4">
             {isLoadingCreations ? (
               <Card className="clay-card border-0">

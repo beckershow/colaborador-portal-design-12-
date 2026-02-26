@@ -30,6 +30,8 @@ export type ApiNotificationType =
   | "store_manager_item_deactivated"
   | "store_reward_requested"
   | "store_reward_request_reviewed"
+  | "feedback_request_received"
+  | "feedback_rejected"
 
 export interface ApiNotification {
   id: string

@@ -131,7 +131,7 @@ export default function HistoricoInteracoesPage() {
         setFeedbacksReceived(fr.data)
         setRedemptions(rd.data)
       })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setLoading(false))
   }, [user])
 
@@ -319,21 +319,21 @@ export default function HistoricoInteracoesPage() {
                   {feedbacksReceived.map((f) => (
                     <div key={f.id} className="flex items-start gap-4 py-4">
                       <Avatar className="h-10 w-10 shrink-0">
-                        {f.isAnonymous || !f.fromUser ? (
-                          <AvatarFallback className="bg-muted text-sm">?</AvatarFallback>
-                        ) : (
+                        {f.fromUser ? (
                           <>
                             <AvatarImage src={f.fromUser.avatar || "/placeholder.svg"} />
                             <AvatarFallback className="bg-primary/20 text-sm">
                               {f.fromUser.nome.split(" ").map((n) => n[0]).join("")}
                             </AvatarFallback>
                           </>
+                        ) : (
+                          <AvatarFallback className="bg-muted text-sm">?</AvatarFallback>
                         )}
                       </Avatar>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-medium text-foreground">
-                            De {f.isAnonymous || !f.fromUser ? "Anônimo" : f.fromUser.nome}
+                            De {f.fromUser?.nome ?? "Remetente"}
                           </p>
                           <Badge variant="outline" className="text-xs">{FEEDBACK_TYPE_LABEL[f.type] ?? f.type}</Badge>
                           <Badge variant={STATUS_VARIANT[f.status] as "default" | "secondary" | "destructive"} className="text-xs capitalize">
