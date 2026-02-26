@@ -66,8 +66,6 @@ import {
   updateStoreItem,
   deleteStoreItem,
   setStoreItemStatus,
-  getManagerStoreItems,
-  setTeamVisibility,
   getTeamRedemptions,
   updateRedemptionStatus,
   getManagerInventory,
@@ -83,7 +81,7 @@ import {
   type StoreRewardRequest,
   type StoreAuditLog,
 } from "@/lib/store-api"
-import { uploadFileToBackend } from "@/lib/uploads-api"
+import { uploadFileToBackend, getImageUrl } from "@/lib/uploads-api"
 import { apiFetch } from "@/lib/api-client"
 import { useToast } from "@/hooks/use-toast"
 import React, { Suspense } from "react"
@@ -420,7 +418,6 @@ function LojinhaProfissionalPanel() {
   })
 
   // ── Estados Gestor ──────────────────────────────────────────────────────────
-  const [estoque, setEstoque] = useState<StoreItem[]>([])
   const [gestorInventory, setGestorInventory] = useState<StoreManagerInventory[]>([])
   const [resgatesTime, setResgatesTime] = useState<StoreRedemption[]>([])
   const [showSolicitarDialog, setShowSolicitarDialog] = useState(false)
@@ -606,40 +603,6 @@ function LojinhaProfissionalPanel() {
     } catch (err) {
       toast({ title: "Erro", description: (err as Error).message, variant: "destructive" })
     }
-  }
-
-  const handleAtivarParaTime = async (itemId: string) => {
-    setTogglingItemId(itemId)
-    try {
-      await setTeamVisibility(itemId, { scope: "all" })
-      toast({ title: "Item Ativado", description: "Item disponibilizado para todo o seu time." })
-      await loadData()
-    } catch (err) {
-      toast({ title: "Erro", description: (err as Error).message, variant: "destructive" })
-    } finally {
-      setTogglingItemId(null)
-    }
-  }
-
-  const handleDesativarParaTime = async (itemId: string) => {
-    setTogglingItemId(itemId)
-    try {
-      // Visibilidade vazia = item não aparece para colaboradores
-      await apiFetch(`/store/items/${itemId}/team-visibility`, {
-        method: "PATCH",
-        body: JSON.stringify({ scope: "specific", userIds: [] }),
-      })
-      toast({ title: "Item Desativado", description: "Item removido da lojinha do time." })
-      await loadData()
-    } catch (err) {
-      toast({ title: "Erro", description: (err as Error).message, variant: "destructive" })
-    } finally {
-      setTogglingItemId(null)
-    }
-  }
-
-  const isItemAtivoParaTime = (item: StoreItem) => {
-    return (item.teamVisibility ?? []).some(tv => tv.teamScope === "all" || tv.userId !== null)
   }
 
   const handleSolicitarRecompensa = async () => {
@@ -1155,7 +1118,7 @@ function LojinhaProfissionalPanel() {
                             <div className="flex items-start gap-4 flex-1">
                               {item.imageUrl ? (
                                 <img
-                                  src={item.imageUrl}
+                                  src={getImageUrl(item.imageUrl) ?? ""}
                                   alt={item.name}
                                   className="w-20 h-20 object-cover rounded-lg flex-shrink-0"
                                 />
@@ -1238,7 +1201,7 @@ function LojinhaProfissionalPanel() {
                               <div className="flex items-start justify-between gap-4">
                                 <div className="flex items-start gap-4 flex-1">
                                   {item.imageUrl ? (
-                                    <img src={item.imageUrl} alt={item.name} className="w-16 h-16 object-cover rounded-lg flex-shrink-0" />
+                                    <img src={getImageUrl(item.imageUrl) ?? ""} alt={item.name} className="w-16 h-16 object-cover rounded-lg flex-shrink-0" />
                                   ) : (
                                     <div className="w-16 h-16 flex items-center justify-center rounded-lg bg-muted flex-shrink-0">
                                       <Gift className="h-6 w-6 text-muted-foreground" />
@@ -1280,7 +1243,7 @@ function LojinhaProfissionalPanel() {
                               <div className="flex items-start justify-between gap-4">
                                 <div className="flex items-start gap-4 flex-1">
                                   {item.imageUrl ? (
-                                    <img src={item.imageUrl} alt={item.name} className="w-16 h-16 object-cover rounded-lg flex-shrink-0 opacity-60" />
+                                    <img src={getImageUrl(item.imageUrl) ?? ""} alt={item.name} className="w-16 h-16 object-cover rounded-lg flex-shrink-0 opacity-60" />
                                   ) : (
                                     <div className="w-16 h-16 flex items-center justify-center rounded-lg bg-muted flex-shrink-0">
                                       <Gift className="h-6 w-6 text-muted-foreground" />
@@ -1606,7 +1569,7 @@ function LojinhaProfissionalPanel() {
                           <div className="flex items-center justify-between gap-4">
                             <div className="flex items-center gap-4 flex-1">
                               {item.imageUrl ? (
-                                <img src={item.imageUrl} alt={item.name} className="w-16 h-16 object-cover rounded flex-shrink-0" />
+                                <img src={getImageUrl(item.imageUrl) ?? ""} alt={item.name} className="w-16 h-16 object-cover rounded flex-shrink-0" />
                               ) : (
                                 <div className="w-16 h-16 flex items-center justify-center rounded bg-muted flex-shrink-0">
                                   <Gift className="h-7 w-7 text-muted-foreground" />

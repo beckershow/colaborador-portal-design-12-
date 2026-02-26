@@ -10,6 +10,7 @@ import {
   type StoreItem,
   type StoreRedemption,
 } from "@/lib/store-api"
+import { getImageUrl } from "@/lib/uploads-api"
 import {
   Dialog,
   DialogContent,
@@ -310,7 +311,7 @@ do resgate realizado.
                         <div className="flex flex-col">
                           {item.imageUrl ? (
                             <img
-                              src={item.imageUrl}
+                              src={getImageUrl(item.imageUrl) ?? ""}
                               alt={item.name}
                               className="h-16 w-16 rounded-2xl object-cover border-2 border-border"
                             />

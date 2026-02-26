@@ -3,6 +3,17 @@
 import { getAccessToken } from "@/lib/api-client"
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api/v1"
 
+/**
+ * Converte uma key do R2 (ex: "store/user-id/img.jpg") em URL completa servida pelo proxy do backend.
+ * Se já for uma URL completa (http/https), retorna como está.
+ * Se for null/undefined, retorna null.
+ */
+export function getImageUrl(key: string | null | undefined): string | null {
+  if (!key) return null
+  if (key.startsWith("http://") || key.startsWith("https://")) return key
+  return `${BASE_URL}/uploads/${key}`
+}
+
 export async function uploadFileToBackend(file: File, folder = "trainings") {
   const token = getAccessToken()
   const form = new FormData()
