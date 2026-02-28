@@ -214,12 +214,18 @@ export function NotificationCenter() {
       case "feedback_received":
       case "feedback_approved":
       case "feedback_rejected":
+      case "feedback_request_declined":
+      case "feedback_request_fulfilled":
         setIsOpen(false)
         router.push("/feedbacks")
         break
       case "feedback_request_received":
         setIsOpen(false)
         router.push("/feedbacks?tab=solicitar")
+        break
+      case "feedback_pending_approval":
+        setIsOpen(false)
+        router.push("/analytics?tab=feedbacks")
         break
       case "survey_available":
         setIsOpen(false)
@@ -245,8 +251,11 @@ export function NotificationCenter() {
       case "reward_redeemed": return <Gift className="h-5 w-5 text-accent" />
       case "feedback_received":
       case "feedback_approved":
-      case "feedback_request_received": return <MessageCircle className="h-5 w-5 text-primary" />
-      case "feedback_rejected": return <X className="h-5 w-5 text-destructive" />
+      case "feedback_request_received":
+      case "feedback_request_fulfilled": return <MessageCircle className="h-5 w-5 text-primary" />
+      case "feedback_rejected":
+      case "feedback_request_declined": return <X className="h-5 w-5 text-destructive" />
+      case "feedback_pending_approval": return <Clock className="h-5 w-5 text-yellow-500" />
       case "store_item_created":
       case "store_item_activated":
       case "store_item_available_to_manager":

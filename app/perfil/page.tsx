@@ -23,6 +23,7 @@ import { useAuth } from "@/lib/auth-context"
 import { NotificationService } from "@/lib/notification-service"
 import { useToast } from "@/hooks/use-toast"
 import { apiFetch } from "@/lib/api-client"
+import { getReceivedFeedbacks, getSentFeedbacks, FEEDBACK_TYPE_LABELS, type Feedback } from "@/lib/feedback-api"
 import { Trophy, Camera, Edit, Bell, CheckCircle, Smile, Send, MessageSquare, ClipboardList, BookOpen, Gift, ArrowRight } from "lucide-react"
 import Link from "next/link"
 import {
@@ -94,6 +95,11 @@ const PerfilPage = () => {
   const [notifPrefs, setNotifPrefs] = useState<NotifPrefs | null>(null)
   const [loadingStats, setLoadingStats] = useState(true)
 
+  const [recentFeedbacksReceived, setRecentFeedbacksReceived] = useState<Feedback[]>([])
+  const [recentFeedbacksSent, setRecentFeedbacksSent] = useState<Feedback[]>([])
+  const [feedbackHistoryTab, setFeedbackHistoryTab] = useState<"received" | "sent">("received")
+  const [loadingFeedbacks, setLoadingFeedbacks] = useState(true)
+
   const [showRequestDialog, setShowRequestDialog] = useState(false)
   const [showConfirmationDialog, setShowConfirmationDialog] = useState(false)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
@@ -146,6 +152,22 @@ const PerfilPage = () => {
         // silently fail; show zeros
       })
       .finally(() => setLoadingStats(false))
+  }, [user])
+
+  // Fetch recent feedbacks
+  useEffect(() => {
+    if (!user) return
+    setLoadingFeedbacks(true)
+    Promise.all([
+      getReceivedFeedbacks(1, 5),
+      getSentFeedbacks(1, 5),
+    ])
+      .then(([receivedRes, sentRes]) => {
+        setRecentFeedbacksReceived(receivedRes.data)
+        setRecentFeedbacksSent(sentRes.data)
+      })
+      .catch(() => { })
+      .finally(() => setLoadingFeedbacks(false))
   }, [user])
 
   // Fetch XP history when period changes
@@ -630,6 +652,89 @@ const PerfilPage = () => {
                   <Trophy className="h-8 w-8 text-primary" />
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* ── Histórico de Feedbacks ── */}
+          <Card className="clay-card border-0">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Histórico de Feedbacks</CardTitle>
+                  <CardDescription>Seus últimos feedbacks recebidos e enviados</CardDescription>
+                </div>
+                <Link href="/feedbacks">
+                  <Button variant="outline" size="sm" className="clay-button bg-transparent">
+                    Ver todos
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </Link>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => setFeedbackHistoryTab("received")}
+                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                    feedbackHistoryTab === "received"
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Recebidos ({recentFeedbacksReceived.length})
+                </button>
+                <button
+                  onClick={() => setFeedbackHistoryTab("sent")}
+                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                    feedbackHistoryTab === "sent"
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Enviados ({recentFeedbacksSent.length})
+                </button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {loadingFeedbacks ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">Carregando...</p>
+              ) : (
+                <div className="space-y-3">
+                  {(feedbackHistoryTab === "received" ? recentFeedbacksReceived : recentFeedbacksSent).length === 0 ? (
+                    <p className="py-6 text-center text-sm text-muted-foreground">
+                      Nenhum feedback {feedbackHistoryTab === "received" ? "recebido" : "enviado"} ainda.
+                    </p>
+                  ) : (
+                    (feedbackHistoryTab === "received" ? recentFeedbacksReceived : recentFeedbacksSent).map(fb => {
+                      const otherUser = feedbackHistoryTab === "received" ? fb.fromUser : fb.toUser
+                      const label = FEEDBACK_TYPE_LABELS[fb.type] ?? fb.type
+                      const statusColors: Record<string, string> = {
+                        aprovado: "text-green-600",
+                        pendente: "text-yellow-600",
+                        rejeitado: "text-red-500",
+                      }
+                      return (
+                        <div key={fb.id} className="flex items-start gap-3 rounded-lg border border-border p-3">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                            {otherUser?.nome?.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() ?? "?"}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-medium">{otherUser?.nome ?? "Desconhecido"}</span>
+                              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">{label}</span>
+                              <span className={`text-xs ${statusColors[fb.status] ?? "text-muted-foreground"}`}>
+                                {fb.status}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{fb.content}</p>
+                            <p className="mt-1 text-xs text-muted-foreground/60">
+                              {new Date(fb.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })}
+                            </p>
+                          </div>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

@@ -111,6 +111,21 @@ export async function getPendingFeedbacks(page = 1, limit = 50): Promise<{ data:
   return apiFetch<{ data: Feedback[] }>(`/feedbacks?type=pending&page=${page}&limit=${limit}`)
 }
 
+export async function getTeamReviewedFeedbacks(page = 1, limit = 50): Promise<{ data: Feedback[] }> {
+  return apiFetch<{ data: Feedback[] }>(`/feedbacks?type=team-reviewed&page=${page}&limit=${limit}`)
+}
+
+export async function resendFeedback(id: string, content?: string): Promise<{ data: Feedback }> {
+  return apiFetch<{ data: Feedback }>(`/feedbacks/${id}/resend`, {
+    method: "PATCH",
+    body: JSON.stringify({ content }),
+  })
+}
+
+export async function deleteFeedback(id: string): Promise<void> {
+  await apiFetch(`/feedbacks/${id}`, { method: "DELETE" })
+}
+
 export async function sendFeedback(data: {
   toUserId: string
   type: FeedbackType
@@ -164,6 +179,78 @@ export async function declineFeedbackRequest(id: string): Promise<{ data: Feedba
   return apiFetch<{ data: FeedbackRequest }>(`/feedbacks/requests/${id}/decline`, { method: "PATCH" })
 }
 
+// ─── Limites individuais por colaborador (gestor) ─────────────────────────────
+
+export interface TeamMemberLimit {
+  userId: string
+  nome: string
+  cargo: string
+  avatar: string | null
+  customLimit: {
+    id: string
+    maxFeedbacksPerDay: number | null
+    maxFeedbacksPerWeek: number | null
+  } | null
+}
+
+export interface TeamLimitsData {
+  members: TeamMemberLimit[]
+  globalDefaults: {
+    limitsEnabled: boolean
+    maxFeedbacksPerDay: number
+    maxFeedbacksPerWeek: number
+  }
+}
+
+export async function getTeamFeedbackLimits(): Promise<{ data: TeamLimitsData }> {
+  return apiFetch<{ data: TeamLimitsData }>("/feedbacks/team-limits")
+}
+
+export async function setUserFeedbackLimit(
+  userId: string,
+  data: { maxFeedbacksPerDay: number | null; maxFeedbacksPerWeek: number | null }
+): Promise<{ data: TeamMemberLimit["customLimit"] }> {
+  return apiFetch(`/feedbacks/team-limits/${userId}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  })
+}
+
+export async function removeUserFeedbackLimit(userId: string): Promise<void> {
+  await apiFetch(`/feedbacks/team-limits/${userId}`, { method: "DELETE" })
+}
+
+// ─── Configurações globais (super-admin) ──────────────────────────────────────
+
+export interface FeedbackGlobalSettings {
+  id: string
+  limitsEnabled: boolean
+  maxFeedbacksPerDay: number
+  maxFeedbacksPerWeek: number
+  individualLimitsEnabled: boolean
+  allowPublicFeedback: boolean
+  requireApproval: boolean
+  updatedAt: string
+}
+
+export async function getFeedbackSettings(): Promise<{ data: FeedbackGlobalSettings }> {
+  return apiFetch<{ data: FeedbackGlobalSettings }>("/feedbacks/settings")
+}
+
+export async function updateFeedbackSettings(data: {
+  limitsEnabled?: boolean
+  maxFeedbacksPerDay?: number
+  maxFeedbacksPerWeek?: number
+  individualLimitsEnabled?: boolean
+  allowPublicFeedback?: boolean
+  requireApproval?: boolean
+}): Promise<{ data: FeedbackGlobalSettings }> {
+  return apiFetch<{ data: FeedbackGlobalSettings }>("/feedbacks/settings", {
+    method: "PUT",
+    body: JSON.stringify(data),
+  })
+}
+
 // ─── Configuração por gestor ───────────────────────────────────────────────────
 
 export interface GestorFeedbackConfig {
@@ -172,22 +259,65 @@ export interface GestorFeedbackConfig {
   allowAnyUser: boolean
   allowPublicFeedback: boolean
   requireApproval: boolean
+  limitsEnabled: boolean
+  maxFeedbacksPerDay: number
+  maxFeedbacksPerWeek: number
+  individualLimitsEnabled: boolean
   updatedAt: string
 }
 
-export async function getGestorFeedbackConfig(): Promise<{ data: GestorFeedbackConfig }> {
-  return apiFetch<{ data: GestorFeedbackConfig }>("/feedbacks/config")
+export interface GestorConfigGlobalDefaults {
+  limitsEnabled: boolean
+  maxFeedbacksPerDay: number
+  maxFeedbacksPerWeek: number
+}
+
+export async function getGestorFeedbackConfig(): Promise<{
+  data: GestorFeedbackConfig
+  globalDefaults: GestorConfigGlobalDefaults
+}> {
+  return apiFetch<{ data: GestorFeedbackConfig; globalDefaults: GestorConfigGlobalDefaults }>("/feedbacks/config")
 }
 
 export async function updateGestorFeedbackConfig(data: {
   allowAnyUser?: boolean
   allowPublicFeedback?: boolean
   requireApproval?: boolean
+  limitsEnabled?: boolean
+  maxFeedbacksPerDay?: number
+  maxFeedbacksPerWeek?: number
+  individualLimitsEnabled?: boolean
 }): Promise<{ data: GestorFeedbackConfig }> {
   return apiFetch<{ data: GestorFeedbackConfig }>("/feedbacks/config", {
     method: "PATCH",
     body: JSON.stringify(data),
   })
+}
+
+// ─── Analytics (gestor/super-admin) ──────────────────────────────────────────
+
+export interface FeedbackAnalyticsData {
+  total: number
+  period: number
+  sentimentDistribution: Record<string, number>
+  topCategories: { name: string; count: number }[]
+  averageIntensity: number | null
+}
+
+export interface FeedbackInsightsData {
+  summary: string
+  strengths: string[]
+  areasForImprovement: string[]
+  recommendations: string[]
+  teamHealthScore: number
+}
+
+export async function getFeedbackAnalytics(days = 30): Promise<{ data: FeedbackAnalyticsData }> {
+  return apiFetch<{ data: FeedbackAnalyticsData }>(`/analytics/feedbacks?days=${days}`)
+}
+
+export async function getFeedbackInsights(days = 30): Promise<{ data: FeedbackInsightsData }> {
+  return apiFetch<{ data: FeedbackInsightsData }>(`/analytics/feedbacks/insights?days=${days}`)
 }
 
 export async function getFeedbackSuggestion(intention: string, type: "feedback" | "request"): Promise<{ suggestion: string }> {

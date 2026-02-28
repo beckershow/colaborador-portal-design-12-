@@ -32,6 +32,9 @@ export type ApiNotificationType =
   | "store_reward_request_reviewed"
   | "feedback_request_received"
   | "feedback_rejected"
+  | "feedback_pending_approval"
+  | "feedback_request_declined"
+  | "feedback_request_fulfilled"
 
 export interface ApiNotification {
   id: string

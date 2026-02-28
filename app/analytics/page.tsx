@@ -6,7 +6,7 @@ import { DialogDescription } from "@/components/ui/dialog"
 
 export const dynamic = "force-dynamic"
 
-import { Suspense, useMemo, useState } from "react"
+import { Suspense, useMemo, useState, useEffect } from "react"
 import { useAuth } from "@/lib/auth-context"
 import { useRouter } from "next/navigation"
 import { EngajamentoService } from "@/lib/engajamento-service"
@@ -2314,6 +2314,14 @@ function AnalyticsPageContent() {
   const { toast } = useToast()
 
   const [activeTab, setActiveTab] = useState("visao-geral")
+  const [feedbackPendingCount, setFeedbackPendingCount] = useState(0)
+
+  // Navigate to tab from URL param (e.g. /analytics?tab=feedbacks)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const tab = params.get("tab")
+    if (tab) setActiveTab(tab)
+  }, [])
   const [filtroTime, setFiltroTime] = useState("Todos")
   const [filtroPeriodo, setFiltroPeriodo] = useState(30)
   const [humorFilterTime, setHumorFilterTime] = useState("todos")
@@ -2804,7 +2812,14 @@ function AnalyticsPageContent() {
             <TabsTrigger value="campanhas">Campanhas</TabsTrigger>
             <TabsTrigger value="feed-social">Feed Social</TabsTrigger>
             <TabsTrigger value="humor">Humor</TabsTrigger>
-            <TabsTrigger value="feedbacks">Feedbacks</TabsTrigger>
+            <TabsTrigger value="feedbacks" className="relative gap-1.5">
+              Feedbacks
+              {feedbackPendingCount > 0 && (
+                <Badge className="bg-yellow-500 text-white text-[10px] px-1.5 h-4 min-w-4">
+                  {feedbackPendingCount}
+                </Badge>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="pesquisas">Pesquisas</TabsTrigger>
             <TabsTrigger value="treinamentos">Treinamentos</TabsTrigger>
             <TabsTrigger value="recompensas">Recompensas</TabsTrigger>
@@ -3267,7 +3282,14 @@ function AnalyticsPageContent() {
             <Tabs defaultValue="analytics" className="w-full">
               <TabsList className="grid w-full grid-cols-2 mb-6">
                 <TabsTrigger value="analytics">Análises</TabsTrigger>
-                <TabsTrigger value="aprovacao">Aprovação</TabsTrigger>
+                <TabsTrigger value="aprovacao" className="gap-1.5">
+                  Aprovação
+                  {feedbackPendingCount > 0 && (
+                    <Badge className="bg-yellow-500 text-white text-[10px] px-1.5 h-4 min-w-4">
+                      {feedbackPendingCount}
+                    </Badge>
+                  )}
+                </TabsTrigger>
               </TabsList>
 
               <TabsContent value="analytics">
@@ -3275,7 +3297,7 @@ function AnalyticsPageContent() {
               </TabsContent>
 
               <TabsContent value="aprovacao">
-                <FeedbackApprovalPanel />
+                <FeedbackApprovalPanel onPendingCountChange={setFeedbackPendingCount} />
               </TabsContent>
             </Tabs>
           </TabsContent>

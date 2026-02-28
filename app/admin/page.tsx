@@ -100,7 +100,6 @@ import {
 } from "@/components/ui/dialog"
 import type { FeedUserActivity } from "@/lib/feed-social-service"
 import { HumorAnalyticsService, type HumorUserAnalytics } from "@/lib/humor-analytics-service"
-import { FeedbackAnalyticsService, type FeedbackUserAnalytics } from "@/lib/feedback-analytics-service"
 import { SurveyAnalyticsService, type SurveyUserAnalytics } from "@/lib/survey-analytics-service"
 import { SurveyService } from "@/lib/survey-service"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -3335,16 +3334,6 @@ function AdminPageContent() {
   const isSuperAdmin = user?.role === "super-admin"
   const isGestor = user?.role === "gestor"
 
-  // Feedback Analytics State
-  const [feedbackAnalytics, setFeedbackAnalytics] = useState<any>(null)
-  const [feedbackUsuarios, setFeedbackUsuarios] = useState<FeedbackUserAnalytics[]>([])
-  const [feedbackFiltroTime, setFeedbackFiltroTime] = useState("Todos")
-  const [feedbackFiltroPeriodo, setFeedbackFiltroPeriodo] = useState(30)
-  const [feedbackOrdenacao, setFeedbackOrdenacao] = useState<{
-    coluna: string
-    direcao: "asc" | "desc"
-  }>({ coluna: "feedbacksEnviados", direcao: "desc" })
-  const [selectedFeedbackUser, setSelectedFeedbackUser] = useState<FeedbackUserAnalytics | null>(null)
 
   // Engagement & General Analytics State
   const [selectedCollaborator, setSelectedCollaborator] = useState<ColaboradorDetalhado | null>(null)
@@ -3393,64 +3382,6 @@ function AdminPageContent() {
     { id: "11", nome: "Kyle Reese", departamento: "Vendas", time: "Time Vendas" },
     { id: "12", nome: "Lara Croft", departamento: "RH", time: "Time RH" },
   ]
-
-  // useEffect for Feedback Analytics
-  useEffect(() => {
-    if (activeTab === "feedbacks") {
-      carregarFeedbackAnalytics()
-    }
-  }, [activeTab, feedbackFiltroTime, feedbackFiltroPeriodo, user?.role])
-
-  const carregarFeedbackAnalytics = () => {
-    const analytics = FeedbackAnalyticsService.getGeneralAnalytics()
-    setFeedbackAnalytics(analytics)
-
-    let usuarios: FeedbackUserAnalytics[] = []
-
-    if (user?.role === "gestor") {
-      usuarios = FeedbackAnalyticsService.filterByTeam(user.departamento)
-    } else if (user?.role === "super-admin") {
-      if (feedbackFiltroTime === "Todos") {
-        usuarios = Object.values(analytics.usuariosPorTime).flat()
-      } else {
-        usuarios = FeedbackAnalyticsService.filterByTeam(feedbackFiltroTime)
-      }
-    } else {
-      usuarios = Object.values(analytics.usuariosPorTime).flat()
-    }
-
-    const usuariosOrdenados = [...usuarios].sort((a, b) => {
-      let valorA = a[feedbackOrdenacao.coluna as keyof FeedbackUserAnalytics]
-      let valorB = b[feedbackOrdenacao.coluna as keyof FeedbackUserAnalytics]
-
-      if (typeof valorA === "string") valorA = valorA.toLowerCase()
-      if (typeof valorB === "string") valorB = valorB.toLowerCase()
-
-      if (valorA < valorB) return feedbackOrdenacao.direcao === "asc" ? -1 : 1
-      if (valorA > valorB) return feedbackOrdenacao.direcao === "asc" ? 1 : -1
-      return 0
-    })
-
-    setFeedbackUsuarios(usuariosOrdenados)
-  }
-
-  const ordenarFeedbackUsuarios = (coluna: string) => {
-    const novaDirecao = feedbackOrdenacao.coluna === coluna && feedbackOrdenacao.direcao === "asc" ? "desc" : "asc"
-    setFeedbackOrdenacao({ coluna, direcao: novaDirecao })
-
-    const usuariosOrdenados = [...feedbackUsuarios].sort((a, b) => {
-      let valorA = a[coluna as keyof FeedbackUserAnalytics]
-      let valorB = b[coluna as keyof FeedbackUserAnalytics]
-
-      if (typeof valorA === "string") valorA = valorA.toLowerCase()
-      if (typeof valorB === "string") valorB = valorB.toLowerCase()
-
-      if (valorA < valorB) return novaDirecao === "asc" ? -1 : 1
-      if (valorA > valorB) return novaDirecao === "asc" ? 1 : -1
-      return 0
-    })
-    setFeedbackUsuarios(usuariosOrdenados)
-  }
 
   // useEffect for Survey Analytics
   useEffect(() => {
@@ -3909,7 +3840,7 @@ function AdminPageContent() {
             <HumorDoDiaPanel />
           </TabsContent>
 
-          <TabsContent value="feedbacks" className="space-y-4">
+          <TabsContent value="feedbacks" className="space-y-6">
             <FeedbackConfigPanel />
           </TabsContent>
 

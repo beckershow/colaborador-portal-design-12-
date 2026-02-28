@@ -27,6 +27,11 @@ import {
   TrendingUp,
   Inbox,
   Eye,
+  Globe,
+  Lock,
+  Pencil,
+  Trash2,
+  RefreshCw,
 } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
@@ -58,6 +63,8 @@ import {
   createFeedbackRequest,
   declineFeedbackRequest,
   getFeedbackSuggestion,
+  resendFeedback,
+  deleteFeedback,
 } from "@/lib/feedback-api"
 
 // ─── Tipos do feedback ─────────────────────────────────────────────────────────
@@ -137,6 +144,19 @@ export default function FeedbacksPage() {
   const [reqMessage, setReqMessage] = useState("")
   const [isSubmittingReq, setIsSubmittingReq] = useState(false)
 
+  // ─── Review antes de enviar
+  const [showFeedbackReview, setShowFeedbackReview] = useState(false)
+  const [showRequestReview, setShowRequestReview] = useState(false)
+
+  // ─── Detalhes de feedback enviado
+  const [viewingFb, setViewingFb] = useState<Feedback | null>(null)
+
+  // ─── Editar e Reenviar
+  const [resendingFb, setResendingFb] = useState<Feedback | null>(null)
+  const [resendContent, setResendContent] = useState("")
+  const [isResending, setIsResending] = useState(false)
+  const [isDeletingFb, setIsDeletingFb] = useState<string | null>(null)
+
   // ─── AI Assistant
   const [showAI, setShowAI] = useState(false)
   const [aiIntention, setAiIntention] = useState("")
@@ -147,6 +167,8 @@ export default function FeedbacksPage() {
   const reqSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ─── Carregar dados ───────────────────────────────────────────────────────────
+
+  const isGestorOrAdmin = user?.role === "gestor" || user?.role === "super-admin"
 
   const loadAll = useCallback(async () => {
     if (!user) return
@@ -182,6 +204,42 @@ export default function FeedbacksPage() {
     if (tab) setActiveTab(tab)
   }, [])
 
+  // ─── Ações de feedback rejeitado ─────────────────────────────────────────────
+
+  const handleResend = async () => {
+    if (!resendingFb) return
+    if (resendContent.trim().length < 10) {
+      toast({ title: "Mensagem muito curta", description: "O feedback deve ter pelo menos 10 caracteres.", variant: "destructive" })
+      return
+    }
+    setIsResending(true)
+    try {
+      const res = await resendFeedback(resendingFb.id, resendContent.trim())
+      setSent(prev => prev.map(f => f.id === resendingFb.id ? res.data : f))
+      setResendingFb(null)
+      setResendContent("")
+      toast({ title: "Feedback reenviado ✅", description: res.data.status === "pendente" ? "Aguardando aprovação do gestor." : "Feedback entregue com sucesso." })
+    } catch (err) {
+      toast({ title: "Erro ao reenviar", description: (err as Error).message, variant: "destructive" })
+    } finally {
+      setIsResending(false)
+    }
+  }
+
+  const handleDeleteRejected = async (feedbackId: string) => {
+    setIsDeletingFb(feedbackId)
+    try {
+      await deleteFeedback(feedbackId)
+      setSent(prev => prev.filter(f => f.id !== feedbackId))
+      if (viewingFb?.id === feedbackId) setViewingFb(null)
+      toast({ title: "Feedback removido", description: "O feedback rejeitado foi removido do histórico." })
+    } catch (err) {
+      toast({ title: "Erro ao remover", description: (err as Error).message, variant: "destructive" })
+    } finally {
+      setIsDeletingFb(null)
+    }
+  }
+
   // ─── Busca de usuários com debounce ──────────────────────────────────────────
 
   const handleRecipientSearch = (value: string) => {
@@ -214,14 +272,14 @@ export default function FeedbacksPage() {
 
   // ─── Enviar feedback ──────────────────────────────────────────────────────────
 
-  const handleSendFeedback = async () => {
+  const handleSendFeedback = async (): Promise<boolean> => {
     if (!selectedUser || !selectedType || message.trim().length < 10) {
       toast({ title: "Preencha todos os campos", description: "Destinatário, tipo e mensagem (mín. 10 caracteres) são obrigatórios.", variant: "destructive" })
-      return
+      return false
     }
     setIsSubmitting(true)
     try {
-      const res = await sendFeedback({
+      await sendFeedback({
         toUserId: selectedUser.id,
         type: selectedType as FeedbackType,
         content: message.trim(),
@@ -241,8 +299,10 @@ export default function FeedbacksPage() {
       setIsPublic(false)
       setReplyToRequestId(null)
       await loadAll()
+      return true
     } catch (err) {
       toast({ title: "Erro ao enviar feedback", description: (err as Error).message, variant: "destructive" })
+      return false
     } finally {
       setIsSubmitting(false)
     }
@@ -260,10 +320,10 @@ export default function FeedbacksPage() {
 
   // ─── Solicitar feedback ───────────────────────────────────────────────────────
 
-  const handleSendRequest = async () => {
+  const handleSendRequest = async (): Promise<boolean> => {
     if (!reqUser) {
       toast({ title: "Selecione um colega", variant: "destructive" })
-      return
+      return false
     }
     setIsSubmittingReq(true)
     try {
@@ -278,8 +338,10 @@ export default function FeedbacksPage() {
       setReqTopic("")
       setReqMessage("")
       await loadAll()
+      return true
     } catch (err) {
       toast({ title: "Erro ao enviar solicitação", description: (err as Error).message, variant: "destructive" })
+      return false
     } finally {
       setIsSubmittingReq(false)
     }
@@ -333,6 +395,175 @@ export default function FeedbacksPage() {
 
   return (
     <>
+      {/* ── Dialog: Revisão de Feedback ─────────────────────────────────────── */}
+      {(() => {
+        const typeInfo = FEEDBACK_TYPES.find(t => t.value === selectedType)
+        const Icon = typeInfo?.icon ?? MessageSquare
+        return (
+          <Dialog open={showFeedbackReview} onOpenChange={setShowFeedbackReview}>
+            <DialogContent className="sm:max-w-[520px]">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Eye className="h-5 w-5 text-primary" />
+                  Revisar feedback antes de enviar
+                </DialogTitle>
+                <DialogDescription>
+                  Confira as informações abaixo. Após confirmar, o feedback será enviado.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4 py-1">
+                {/* Destinatário */}
+                <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Destinatário</p>
+                  {selectedUser && (
+                    <div className="flex items-center gap-3">
+                      <Avatar className="h-10 w-10">
+                        <AvatarImage src={getImageUrl(selectedUser.avatar ?? "") ?? ""} />
+                        <AvatarFallback className="bg-primary text-primary-foreground text-sm">
+                          {initials(selectedUser.nome)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{selectedUser.nome}</p>
+                        <p className="text-xs text-muted-foreground">{selectedUser.cargo} · {selectedUser.departamento}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Tipo */}
+                {typeInfo && (
+                  <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tipo de Reconhecimento</p>
+                    <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium ${typeInfo.bg} ${typeInfo.color}`}>
+                      <Icon className="h-4 w-4" />
+                      {typeInfo.label}
+                    </div>
+                  </div>
+                )}
+
+                {/* Mensagem */}
+                <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Mensagem</p>
+                  <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{message}</p>
+                  <p className="text-xs text-muted-foreground text-right">{message.length} caracteres</p>
+                </div>
+
+                {/* Visibilidade + aprovação */}
+                <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Visibilidade</p>
+                  <div className="flex items-center gap-2 text-sm">
+                    {isPublic && stats?.allowPublicFeedback
+                      ? <><span className="h-2 w-2 rounded-full bg-blue-500" /><span className="text-foreground">Público — poderá ser compartilhado no feed social</span></>
+                      : <><span className="h-2 w-2 rounded-full bg-muted-foreground" /><span className="text-muted-foreground">Privado — visível apenas para o destinatário</span></>
+                    }
+                  </div>
+                  {stats?.requireApproval && (
+                    <p className="text-xs text-orange-600 flex items-center gap-1.5 mt-1">
+                      <Clock className="h-3.5 w-3.5" />
+                      Este feedback ficará em análise até aprovação do gestor.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button variant="outline" onClick={() => setShowFeedbackReview(false)} disabled={isSubmitting}>
+                  Editar
+                </Button>
+                <Button
+                  onClick={async () => {
+                    const ok = await handleSendFeedback()
+                    if (ok) setShowFeedbackReview(false)
+                  }}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting
+                    ? <><div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-background border-t-transparent" />Enviando...</>
+                    : <><Send className="mr-2 h-4 w-4" />Confirmar e Enviar</>}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )
+      })()}
+
+      {/* ── Dialog: Revisão de Solicitação ───────────────────────────────────── */}
+      <Dialog open={showRequestReview} onOpenChange={setShowRequestReview}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="h-5 w-5 text-primary" />
+              Revisar solicitação antes de enviar
+            </DialogTitle>
+            <DialogDescription>
+              Confira os detalhes da sua solicitação de feedback.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-1">
+            {/* Destinatário */}
+            <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Solicitar feedback de</p>
+              {reqUser && (
+                <div className="flex items-center gap-3">
+                  <Avatar className="h-10 w-10">
+                    <AvatarImage src={getImageUrl(reqUser.avatar ?? "") ?? ""} />
+                    <AvatarFallback className="bg-primary text-primary-foreground text-sm">
+                      {initials(reqUser.nome)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{reqUser.nome}</p>
+                    <p className="text-xs text-muted-foreground">{reqUser.cargo} · {reqUser.departamento}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Tópico */}
+            {reqTopic.trim() && (
+              <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-1.5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tópico</p>
+                <p className="text-sm font-medium text-foreground">{reqTopic}</p>
+              </div>
+            )}
+
+            {/* Mensagem */}
+            {reqMessage.trim() && (
+              <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-1.5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Mensagem</p>
+                <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{reqMessage}</p>
+              </div>
+            )}
+
+            {!reqTopic.trim() && !reqMessage.trim() && (
+              <div className="rounded-lg border border-border bg-muted/30 p-4">
+                <p className="text-xs text-muted-foreground italic">Solicitação geral — sem tópico ou mensagem adicional.</p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setShowRequestReview(false)} disabled={isSubmittingReq}>
+              Editar
+            </Button>
+            <Button
+              onClick={async () => {
+                const ok = await handleSendRequest()
+                if (ok) setShowRequestReview(false)
+              }}
+              disabled={isSubmittingReq}
+            >
+              {isSubmittingReq
+                ? "Enviando..."
+                : <><Send className="mr-2 h-4 w-4" />Confirmar e Enviar</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Dialog: Assistente de IA */}
       <Dialog open={showAI} onOpenChange={setShowAI}>
         <DialogContent className="sm:max-w-[500px]">
@@ -575,13 +806,11 @@ export default function FeedbacksPage() {
               </div>
 
               <Button
-                onClick={handleSendFeedback}
-                disabled={isSubmitting || isLimitReached || !selectedUser || !selectedType || message.length < 10}
+                onClick={() => setShowFeedbackReview(true)}
+                disabled={isLimitReached || !selectedUser || !selectedType || message.length < 10}
                 className="w-full clay-button"
               >
-                {isSubmitting
-                  ? <><div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-background border-t-transparent" />Enviando...</>
-                  : <><Send className="mr-2 h-4 w-4" />Enviar Feedback</>}
+                <Eye className="mr-2 h-4 w-4" />Revisar e Enviar
               </Button>
 
               {/* Contador */}
@@ -768,30 +997,75 @@ export default function FeedbacksPage() {
                   {sent.map(fb => {
                     const typeInfo = FEEDBACK_TYPES.find(t => t.value === fb.type)
                     const Icon = typeInfo?.icon ?? MessageSquare
+                    const isRejected = fb.status === "rejeitado"
                     return (
                       <div
                         key={fb.id}
-                        className="flex items-center gap-3 rounded-lg border border-border bg-card p-3 hover:bg-muted/20 transition-colors"
+                        className={`rounded-lg border bg-card transition-colors ${isRejected ? "border-destructive/30 bg-destructive/5" : "border-border hover:bg-muted/20 cursor-pointer"}`}
                       >
-                        <Avatar className="h-10 w-10 shrink-0">
-                          {fb.toUser ? <AvatarImage src={getImageUrl(fb.toUser.avatar ?? "") ?? ""} /> : null}
-                          <AvatarFallback className="bg-muted text-muted-foreground text-sm">
-                            {fb.toUser ? initials(fb.toUser.nome) : "?"}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="font-medium text-sm text-foreground">Para {fb.toUser?.nome ?? "Colega"}</p>
-                            <span className="text-xs text-muted-foreground">{relativeTime(fb.createdAt)}</span>
-                          </div>
-                          <div className="flex items-center gap-2 mt-1">
-                            <Badge variant="outline" className="text-[10px] h-4 px-1 px-1.5 flex items-center gap-1">
-                              <Icon className="h-2.5 w-2.5" />
-                              {FEEDBACK_TYPE_LABELS[fb.type]}
-                            </Badge>
-                            <StatusBadge status={fb.status} />
+                        <div
+                          className="flex items-center gap-3 p-3"
+                          onClick={() => !isRejected && setViewingFb(fb)}
+                          role={!isRejected ? "button" : undefined}
+                        >
+                          <Avatar className="h-10 w-10 shrink-0">
+                            {fb.toUser ? <AvatarImage src={getImageUrl(fb.toUser.avatar ?? "") ?? ""} /> : null}
+                            <AvatarFallback className="bg-muted text-muted-foreground text-sm">
+                              {fb.toUser ? initials(fb.toUser.nome) : "?"}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="font-medium text-sm text-foreground">Para {fb.toUser?.nome ?? "Colega"}</p>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-muted-foreground">{relativeTime(fb.createdAt)}</span>
+                                {!isRejected && <Eye className="h-3.5 w-3.5 text-muted-foreground" />}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 mt-1 flex-wrap">
+                              <Badge variant="outline" className="text-[10px] h-4 px-1.5 flex items-center gap-1">
+                                <Icon className="h-2.5 w-2.5" />
+                                {FEEDBACK_TYPE_LABELS[fb.type]}
+                              </Badge>
+                              <StatusBadge status={fb.status} />
+                            </div>
                           </div>
                         </div>
+
+                        {/* Ações para feedbacks rejeitados */}
+                        {isRejected && (
+                          <div className="px-3 pb-3 space-y-2">
+                            {fb.reviewNote && (
+                              <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs text-destructive">
+                                <span className="font-medium">Motivo: </span>
+                                {fb.reviewNote}
+                              </div>
+                            )}
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="flex-1 h-7 text-xs gap-1"
+                                onClick={() => { setResendingFb(fb); setResendContent(fb.content) }}
+                              >
+                                <Pencil className="h-3 w-3" />
+                                Editar e Reenviar
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs gap-1 border-destructive/30 text-destructive hover:bg-destructive/10"
+                                onClick={() => handleDeleteRejected(fb.id)}
+                                disabled={isDeletingFb === fb.id}
+                              >
+                                {isDeletingFb === fb.id
+                                  ? <RefreshCw className="h-3 w-3 animate-spin" />
+                                  : <Trash2 className="h-3 w-3" />}
+                                Cancelar
+                              </Button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )
                   })}
@@ -885,8 +1159,8 @@ export default function FeedbacksPage() {
                   />
                 </div>
 
-                <Button onClick={handleSendRequest} disabled={isSubmittingReq || !reqUser} className="w-full clay-button">
-                  {isSubmittingReq ? "Enviando..." : "Enviar Solicitação"}
+                <Button onClick={() => setShowRequestReview(true)} disabled={!reqUser} className="w-full clay-button">
+                  <Eye className="mr-2 h-4 w-4" />Revisar e Enviar
                 </Button>
               </CardContent>
             </Card>
@@ -964,7 +1238,118 @@ export default function FeedbacksPage() {
             </div>
           </div>
         </TabsContent>
+
       </Tabs>
+
+      {/* ── Dialog: Detalhes do Feedback Enviado ── */}
+      <Dialog open={viewingFb !== null} onOpenChange={open => { if (!open) setViewingFb(null) }}>
+        <DialogContent className="sm:max-w-[500px]">
+          {viewingFb && (() => {
+            const typeInfo = FEEDBACK_TYPES.find(t => t.value === viewingFb.type)
+            const Icon = typeInfo?.icon ?? MessageSquare
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle>Detalhes do Feedback Enviado</DialogTitle>
+                  <DialogDescription>
+                    Enviado para <strong>{viewingFb.toUser?.nome ?? "Colega"}</strong> em {new Date(viewingFb.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-2">
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-12 w-12">
+                      {viewingFb.toUser?.avatar && <AvatarImage src={getImageUrl(viewingFb.toUser.avatar) ?? ""} />}
+                      <AvatarFallback className="bg-primary/10 text-primary text-sm">
+                        {viewingFb.toUser ? initials(viewingFb.toUser.nome) : "?"}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <p className="font-semibold">{viewingFb.toUser?.nome ?? "—"}</p>
+                      <p className="text-xs text-muted-foreground">{viewingFb.toUser?.cargo ?? ""}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <Badge variant="outline" className={`text-[10px] px-2 border flex items-center gap-1 ${typeInfo?.bg ?? ""} ${typeInfo?.color ?? ""}`}>
+                      <Icon className="h-3 w-3" />
+                      {FEEDBACK_TYPE_LABELS[viewingFb.type]}
+                    </Badge>
+                    {viewingFb.isPublic ? (
+                      <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/20 gap-1 text-[10px]">
+                        <Globe className="h-3 w-3" />Público
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="bg-gray-500/10 text-gray-600 border-gray-500/20 gap-1 text-[10px]">
+                        <Lock className="h-3 w-3" />Privado
+                      </Badge>
+                    )}
+                    <StatusBadge status={viewingFb.status} />
+                  </div>
+                  <div className="rounded-lg border border-border bg-muted/30 p-4">
+                    <p className="text-sm text-foreground whitespace-pre-wrap">{viewingFb.content}</p>
+                  </div>
+                  {viewingFb.status === "pendente" && (
+                    <div className="rounded-lg border border-yellow-500/20 bg-yellow-500/5 p-3">
+                      <p className="text-xs text-yellow-700 dark:text-yellow-400">
+                        <Clock className="inline h-3 w-3 mr-1" />
+                        Este feedback aguarda aprovação do gestor antes de ser entregue.
+                      </p>
+                    </div>
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setViewingFb(null)}>Fechar</Button>
+                </DialogFooter>
+              </>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Dialog: Editar e Reenviar Feedback Rejeitado ── */}
+      <Dialog open={resendingFb !== null} onOpenChange={open => { if (!open) { setResendingFb(null); setResendContent("") } }}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>Editar e Reenviar Feedback</DialogTitle>
+            <DialogDescription>
+              Edite o conteúdo do seu feedback e reenvie para análise do gestor.
+            </DialogDescription>
+          </DialogHeader>
+          {resendingFb && (
+            <div className="space-y-4 py-2">
+              {resendingFb.reviewNote && (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+                  <p className="text-xs font-medium text-destructive mb-1">Motivo da recusa:</p>
+                  <p className="text-xs text-muted-foreground italic">{resendingFb.reviewNote}</p>
+                </div>
+              )}
+              <div className="space-y-1.5">
+                <Label htmlFor="resend-content">Conteúdo do feedback</Label>
+                <Textarea
+                  id="resend-content"
+                  value={resendContent}
+                  onChange={e => setResendContent(e.target.value)}
+                  rows={5}
+                  placeholder="Escreva seu feedback revisado..."
+                />
+                <p className="text-[10px] text-muted-foreground">{resendContent.length} caracteres (mínimo 10)</p>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setResendingFb(null); setResendContent("") }}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleResend}
+              disabled={isResending || resendContent.trim().length < 10}
+            >
+              {isResending
+                ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Reenviando...</>
+                : <><Send className="h-4 w-4 mr-2" />Reenviar Feedback</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

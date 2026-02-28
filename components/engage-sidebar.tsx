@@ -31,8 +31,9 @@ import { NotificationCenter } from "@/components/notification-center"
 import { CollaboratorNotificationBell } from "@/components/collaborator-notification-bell"
 import { useAuth } from "@/lib/auth-context"
 import { GamificationGuard } from "@/lib/gamification-guard"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { getPendingFeedbacks } from "@/lib/feedback-api"
 
 export function EngageSidebar({
   isCollapsed,
@@ -53,6 +54,22 @@ export function EngageSidebar({
   // TASK 4: Estado de expansão da categoria de módulos (apenas para gestores e admins)
   const isGestorOrAdmin = user?.role === "gestor" || user?.role === "super-admin"
   const [isModulosExpanded, setIsModulosExpanded] = useState(!isGestorOrAdmin)
+
+  // Badge de aprovações pendentes (apenas gestor)
+  const [feedbackPendingCount, setFeedbackPendingCount] = useState(0)
+  useEffect(() => {
+    if (user?.role !== "gestor") return
+    getPendingFeedbacks(1, 1)
+      .then(res => setFeedbackPendingCount(res.data.length))
+      .catch(() => {})
+    const interval = setInterval(() => {
+      getPendingFeedbacks(1, 1)
+        .then(res => setFeedbackPendingCount(res.data.length))
+        .catch(() => {})
+    }, 60_000) // recheck every 60s
+    return () => clearInterval(interval)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.role])
 
   if (!user) return null
 
@@ -287,6 +304,7 @@ export function EngageSidebar({
 
               {adminNavigation.map((item) => {
                 const isActive = pathname === item.href
+                const showBadge = item.href === "/analytics" && feedbackPendingCount > 0
                 return (
                   <Link
                     key={item.name}
@@ -300,8 +318,22 @@ export function EngageSidebar({
                     )}
                     title={isCollapsed ? item.name : undefined}
                   >
-                    <item.icon className={iconClass} />
-                    {!isCollapsed && item.name}
+                    <div className="relative">
+                      <item.icon className={iconClass} />
+                      {showBadge && isCollapsed && (
+                        <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-yellow-500" />
+                      )}
+                    </div>
+                    {!isCollapsed && (
+                      <span className="flex items-center gap-2 flex-1">
+                        {item.name}
+                        {showBadge && (
+                          <Badge className="ml-auto bg-yellow-500 text-white text-[10px] px-1.5 h-4 min-w-4">
+                            {feedbackPendingCount}
+                          </Badge>
+                        )}
+                      </span>
+                    )}
                   </Link>
                 )
               })}
